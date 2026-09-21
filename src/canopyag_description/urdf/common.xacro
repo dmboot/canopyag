@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== materials ===================== -->
+  <material name="canopy_grey">  <color rgba="0.35 0.37 0.40 1.0"/></material>
+  <material name="canopy_green"> <color rgba="0.20 0.55 0.30 1.0"/></material>
+  <material name="canopy_black"> <color rgba="0.12 0.12 0.13 1.0"/></material>
+  <material name="canopy_alu">   <color rgba="0.72 0.74 0.76 1.0"/></material>
+
+  <!--
+    Solid-box inertia tensor about the link's own centre of mass.
+    This is an APPROXIMATION. It is good enough for Gazebo to behave and for
+    MoveIt (which ignores inertia entirely). Replace with the real tensor from
+    SolidWorks > Evaluate > Mass Properties when you care about dynamics -
+    take the values "taken at the center of mass and aligned with the output
+    coordinate system", and remember SolidWorks reports g*mm^2 by default.
+  -->
+  <xacro:macro name="box_inertial" params="mass bbox com_xyz">
+    <inertial>
+      <origin xyz="${com_xyz[0]} ${com_xyz[1]} ${com_xyz[2]}" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia
+        ixx="${mass / 12.0 * (bbox[1]*bbox[1] + bbox[2]*bbox[2])}"
+        iyy="${mass / 12.0 * (bbox[0]*bbox[0] + bbox[2]*bbox[2])}"
+        izz="${mass / 12.0 * (bbox[0]*bbox[0] + bbox[1]*bbox[1])}"
+        ixy="0.0" ixz="0.0" iyz="0.0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!--
+    One link, built either from a mesh or from its bounding box.
+    Collision always uses the box when use_meshes is false; when true it uses
+    meshes/collision/<name>.stl, which MUST be a decimated / convex-ish version
+    of the visual mesh - never point Gazebo at a 200k-triangle SolidWorks
+    export or the physics step will crawl.
+  -->
+  <xacro:macro name="arm_link" params="name cfg use_meshes material:=canopy_grey cfg_name:=''">
+    <xacro:property name="L" value="${cfg['links'][cfg_name if cfg_name else name]}"/>
+    <link name="${name}">
+      <xacro:box_inertial mass="${L['mass']}" bbox="${L['bbox']}" com_xyz="${L['com_xyz']}"/>
+
+      <visual>
+        <xacro:if value="${use_meshes}">
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <mesh filename="package://canopyag_description/meshes/visual/${L['mesh']}.stl"
+                  scale="0.001 0.001 0.001"/>
+          </geometry>
+        </xacro:if>
+        <xacro:unless value="${use_meshes}">
+          <origin xyz="${L['com_xyz'][0]} ${L['com_xyz'][1]} ${L['com_xyz'][2]}" rpy="0 0 0"/>
+          <geometry>
+            <box size="${L['bbox'][0]} ${L['bbox'][1]} ${L['bbox'][2]}"/>
+          </geometry>
+        </xacro:unless>
+        <material name="${material}"/>
+      </visual>
+
+      <collision>
+        <xacro:if value="${use_meshes}">
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry>
+            <mesh filename="package://canopyag_description/meshes/collision/${L['mesh']}.stl"
+                  scale="0.001 0.001 0.001"/>
+          </geometry>
+        </xacro:if>
+        <xacro:unless value="${use_meshes}">
+          <origin xyz="${L['com_xyz'][0]} ${L['com_xyz'][1]} ${L['com_xyz'][2]}" rpy="0 0 0"/>
+          <geometry>
+            <box size="${L['bbox'][0]} ${L['bbox'][1]} ${L['bbox'][2]}"/>
+          </geometry>
+        </xacro:unless>
+      </collision>
+    </link>
+  </xacro:macro>
+
+  <!-- One joint, entirely from arm_parameters.yaml. -->
+  <xacro:macro name="arm_joint" params="name parent child J">
+    <joint name="${name}" type="${J['type']}">
+      <parent link="${parent}"/>
+      <child  link="${child}"/>
+      <origin xyz="${J['origin_xyz'][0]} ${J['origin_xyz'][1]} ${J['origin_xyz'][2]}"
+              rpy="${J['origin_rpy'][0]} ${J['origin_rpy'][1]} ${J['origin_rpy'][2]}"/>
+      <axis xyz="${J['axis'][0]} ${J['axis'][1]} ${J['axis'][2]}"/>
+      <limit lower="${J['lower']}" upper="${J['upper']}"
+             velocity="${J['max_velocity']}" effort="${J['max_effort']}"/>
+      <!-- Belt drives have real compliance; these keep Gazebo from ringing. -->
+      <dynamics damping="0.5" friction="0.1"/>
+    </joint>
+  </xacro:macro>
+
+</robot>

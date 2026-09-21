@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Friction/contact for the jaws, otherwise grasped fruit slides straight
+       out. mu=1.2 is deliberately high - assume rubber-faced jaws. -->
+  <xacro:macro name="jaw_surface" params="link">
+    <gazebo reference="${link}">
+      <mu1>1.2</mu1>
+      <mu2>1.2</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:macro name="canopyag_gazebo" params="controllers_file">
+
+    <!-- gz_ros2_control spawns the controller_manager INSIDE the sim process
+         so it steps in lockstep with physics. There is no separate
+         ros2_control_node when simulating - do not launch one. -->
+    <gazebo>
+      <plugin filename="gz_ros2_control-system"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>${controllers_file}</parameters>
+      </plugin>
+    </gazebo>
+
+    <xacro:jaw_surface link="left_finger_link"/>
+    <xacro:jaw_surface link="right_finger_link"/>
+
+  </xacro:macro>
+
+</robot>

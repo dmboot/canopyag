@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- One CAN-driven axis. `J` is the whole cfg['joints'] dict. -->
+  <xacro:macro name="arm_axis" params="name node_id J">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">${J[name]['lower']}</param>
+        <param name="max">${J[name]['upper']}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <!-- Read by the CAN hardware interface; ignored in simulation. -->
+      <param name="can_node_id">${node_id}</param>
+      <param name="gear_ratio">${J[name]['gear_ratio']}</param>
+    </joint>
+  </xacro:macro>
+
+  <!--
+    TWO hardware components, deliberately.
+
+    The 5 NEMAs share a CAN bus, an error state and a read/write cycle. The 2
+    MG996R servos do not - they are open-loop PWM off a microcontroller.
+    Modelling them as one component would mean a CAN timeout kills the gripper
+    and a servo fault faults the arm. Splitting them also lets MoveIt own the
+    arm controller while your pick logic owns the gripper.
+
+    `sim` is the only thing that differs between Gazebo and the real arm.
+  -->
+  <xacro:macro name="canopyag_ros2_control" params="cfg sim can_interface can_bitrate">
+
+    <xacro:property name="J" value="${cfg['joints']}"/>
+    <xacro:property name="G" value="${cfg['gripper']}"/>
+
+    <!-- =============== arm: 5x NEMA over CAN =============== -->
+    <ros2_control name="canopyag_arm" type="system">
+      <hardware>
+        <xacro:if value="${sim}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${sim}">
+          <!-- Implemented in canopyag_hardware (not written yet - see README). -->
+          <plugin>canopyag_hardware/CanopyagArmHardware</plugin>
+          <param name="can_interface">${can_interface}</param>
+          <param name="can_bitrate">${can_bitrate}</param>
+          <param name="read_timeout_ms">50</param>
+        </xacro:unless>
+      </hardware>
+
+      <xacro:arm_axis name="z_lift_joint"     node_id="1" J="${J}"/>
+      <xacro:arm_axis name="shoulder_joint"   node_id="2" J="${J}"/>
+      <xacro:arm_axis name="elbow_joint"      node_id="3" J="${J}"/>
+      <xacro:arm_axis name="wrist_roll_joint" node_id="4" J="${J}"/>
+      <xacro:arm_axis name="tool_pitch_joint" node_id="5" J="${J}"/>
+    </ros2_control>
+
+    <!-- =============== gripper: 2x MG996R =============== -->
+    <ros2_control name="canopyag_gripper" type="system">
+      <hardware>
+        <xacro:if value="${sim}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${sim}">
+          <plugin>canopyag_hardware/CanopyagGripperHardware</plugin>
+          <param name="port">/dev/ttyACM0</param>
+          <param name="baud_rate">115200</param>
+        </xacro:unless>
+      </hardware>
+
+      <joint name="tool_roll_joint">
+        <command_interface name="position">
+          <param name="min">${G['tool_roll_joint']['lower']}</param>
+          <param name="max">${G['tool_roll_joint']['upper']}</param>
+        </command_interface>
+        <!-- MG996R has no feedback: the interface echoes the command back. -->
+        <state_interface name="position"/>
+        <param name="servo_channel">0</param>
+      </joint>
+
+      <joint name="finger_joint">
+        <command_interface name="position">
+          <param name="min">${G['finger_joint']['lower']}</param>
+          <param name="max">${G['finger_joint']['upper']}</param>
+        </command_interface>
+        <state_interface name="position"/>
+        <param name="servo_channel">1</param>
+      </joint>
+
+      <!-- right_finger_joint is a URDF mimic; ros2_control drives it for us.
+           It must NOT appear here. -->
+    </ros2_control>
+
+  </xacro:macro>
+
+</robot>

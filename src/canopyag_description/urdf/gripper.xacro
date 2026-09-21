@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!--
+    ParallelServoGripAssem - 2x MG996R.
+      tool_roll_joint : rotates the whole gripper about the tool X axis
+      finger_joint    : drives the left jaw; right jaw mimics it (multiplier -1)
+      tcp_link        : the frame MoveIt plans for. No geometry, no mass.
+
+    A `mimic` tag is the right way to model a parallel jaw: ONE actuated DOF,
+    two moving bodies. Do NOT give the second jaw its own command interface -
+    ros2_control and MoveIt both handle mimic joints correctly, and giving it
+    a real DOF means the planner can command physically impossible jaw poses.
+  -->
+  <xacro:macro name="canopyag_gripper" params="cfg use_meshes parent">
+
+    <xacro:property name="G" value="${cfg['gripper']}"/>
+    <xacro:property name="R" value="${G['tool_roll_joint']}"/>
+    <xacro:property name="F" value="${G['finger_joint']}"/>
+
+    <xacro:arm_link name="gripper_base_link" cfg="${cfg}" use_meshes="${use_meshes}" material="canopy_black"/>
+
+    <joint name="tool_roll_joint" type="revolute">
+      <parent link="${parent}"/>
+      <child  link="gripper_base_link"/>
+      <origin xyz="${R['origin_xyz'][0]} ${R['origin_xyz'][1]} ${R['origin_xyz'][2]}"
+              rpy="${R['origin_rpy'][0]} ${R['origin_rpy'][1]} ${R['origin_rpy'][2]}"/>
+      <axis xyz="${R['axis'][0]} ${R['axis'][1]} ${R['axis'][2]}"/>
+      <limit lower="${R['lower']}" upper="${R['upper']}"
+             velocity="${R['max_velocity']}" effort="${R['max_effort']}"/>
+      <dynamics damping="0.1" friction="0.05"/>
+    </joint>
+
+    <!-- driven jaw -->
+    <xacro:arm_link name="left_finger_link"  cfg="${cfg}" use_meshes="${use_meshes}" material="canopy_grey" cfg_name="finger_link"/>
+    <joint name="finger_joint" type="prismatic">
+      <parent link="gripper_base_link"/>
+      <child  link="left_finger_link"/>
+      <origin xyz="${F['origin_xyz'][0]} ${F['origin_xyz'][1]} ${F['origin_xyz'][2]}"
+              rpy="${F['origin_rpy'][0]} ${F['origin_rpy'][1]} ${F['origin_rpy'][2]}"/>
+      <axis xyz="${F['axis'][0]} ${F['axis'][1]} ${F['axis'][2]}"/>
+      <limit lower="${F['lower']}" upper="${F['upper']}"
+             velocity="${F['max_velocity']}" effort="${F['max_effort']}"/>
+    </joint>
+
+    <!-- mirrored jaw -->
+    <xacro:arm_link name="right_finger_link" cfg="${cfg}" use_meshes="${use_meshes}" material="canopy_grey" cfg_name="finger_link"/>
+    <joint name="right_finger_joint" type="prismatic">
+      <parent link="gripper_base_link"/>
+      <child  link="right_finger_link"/>
+      <origin xyz="${F['origin_xyz'][0]} ${-F['origin_xyz'][1]} ${F['origin_xyz'][2]}"
+              rpy="${F['origin_rpy'][0]} ${F['origin_rpy'][1]} ${pi}"/>
+      <axis xyz="${F['axis'][0]} ${F['axis'][1]} ${F['axis'][2]}"/>
+      <limit lower="${F['lower']}" upper="${F['upper']}"
+             velocity="${F['max_velocity']}" effort="${F['max_effort']}"/>
+      <mimic joint="finger_joint" multiplier="1.0" offset="0.0"/>
+    </joint>
+
+    <!-- Tool centre point: grasp frame, zero geometry. -->
+    <link name="tcp_link"/>
+    <joint name="tcp_joint" type="fixed">
+      <parent link="gripper_base_link"/>
+      <child  link="tcp_link"/>
+      <origin xyz="${G['tcp_xyz'][0]} ${G['tcp_xyz'][1]} ${G['tcp_xyz'][2]}"
+              rpy="${G['tcp_rpy'][0]} ${G['tcp_rpy'][1]} ${G['tcp_rpy'][2]}"/>
+    </joint>
+
+  </xacro:macro>
+
+</robot>

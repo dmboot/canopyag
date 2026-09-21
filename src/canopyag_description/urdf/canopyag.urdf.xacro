@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  canopy.ag SCARA - top-level description.
+
+  Build it by hand to check your edits:
+    xacro canopyag.urdf.xacro sim:=false > /tmp/canopyag.urdf
+    check_urdf /tmp/canopyag.urdf
+    urdf_to_graphiz /tmp/canopyag.urdf     # renders the kinematic tree to PDF
+
+  Args:
+    sim            true  -> gz_ros2_control plugin + Gazebo tags
+                   false -> the CAN/serial hardware interfaces
+    use_meshes     override the value in arm_parameters.yaml
+    can_interface  SocketCAN device name (ip link show)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="canopyag">
+
+  <xacro:arg name="sim"           default="true"/>
+  <xacro:arg name="can_interface" default="can0"/>
+  <xacro:arg name="can_bitrate"   default="500000"/>
+  <xacro:arg name="use_meshes"    default=""/>
+  <xacro:arg name="params_file"
+             default="$(find canopyag_description)/config/arm_parameters.yaml"/>
+  <xacro:arg name="controllers_file"
+             default="$(find canopyag_description)/config/controllers.yaml"/>
+
+  <xacro:include filename="$(find canopyag_description)/urdf/common.xacro"/>
+  <xacro:include filename="$(find canopyag_description)/urdf/arm.xacro"/>
+  <xacro:include filename="$(find canopyag_description)/urdf/gripper.xacro"/>
+  <xacro:include filename="$(find canopyag_description)/urdf/canopyag.ros2_control.xacro"/>
+  <xacro:include filename="$(find canopyag_description)/urdf/gazebo.xacro"/>
+
+  <xacro:property name="cfg" value="${xacro.load_yaml('$(arg params_file)')}"/>
+  <xacro:property name="sim" value="$(arg sim)"/>
+  <xacro:property name="use_meshes"
+                  value="${'$(arg use_meshes)' if '$(arg use_meshes)' != '' else cfg['options']['use_meshes']}"/>
+
+  <!-- The column is bolted down. If the SCARA ever goes on a rail or an AMR,
+       replace this fixed joint - do not move base_link itself. -->
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${cfg['options']['floor_offset']}" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:canopyag_arm cfg="${cfg}" use_meshes="${use_meshes}"/>
+  <xacro:canopyag_gripper cfg="${cfg}" use_meshes="${use_meshes}" parent="tool_link"/>
+
+  <xacro:canopyag_ros2_control cfg="${cfg}" sim="${sim}"
+                               can_interface="$(arg can_interface)"
+                               can_bitrate="$(arg can_bitrate)"/>
+
+  <xacro:if value="${sim}">
+    <xacro:canopyag_gazebo controllers_file="$(arg controllers_file)"/>
+  </xacro:if>
+
+</robot>
