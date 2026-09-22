@@ -1,28 +1,22 @@
-"""Guard rail: the xacro must expand and the URDF must be a valid tree.
+"""Guard rail: the xacro must expand, the tree must be valid, the meshes must
+exist and controllers.yaml must name joints that are actually in the URDF.
 
-This catches the two things that actually break when you edit
-config/arm_parameters.yaml: a typo in a key name (KeyError inside xacro) and
-a joint that references a link that doesn't exist.
+These are the four things that break when you re-import a SolidWorks export.
 
 Run standalone: pytest src/canopyag_description/test/test_urdf_parses.py
 """
 
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+import yaml
 
-URDF_XACRO = Path(__file__).resolve().parents[1] / "urdf" / "canopyag.urdf.xacro"
-
-EXPECTED_ACTUATED_JOINTS = {
-    "z_lift_joint",
-    "shoulder_joint",
-    "elbow_joint",
-    "wrist_roll_joint",
-    "tool_pitch_joint",
-    "tool_roll_joint",
-    "finger_joint",
-}
+PKG = Path(__file__).resolve().parents[1]
+URDF_XACRO = PKG / "urdf" / "canopyag.urdf.xacro"
+PARAMS = PKG / "config" / "robot_parameters.yaml"
+CONTROLLERS = PKG / "config" / "controllers.yaml"
 
 
 def expand(**args):
@@ -30,22 +24,43 @@ def expand(**args):
     return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
 
+@pytest.fixture(scope="module")
+def urdf():
+    return ET.fromstring(expand(sim="true"))
+
+
+@pytest.fixture(scope="module")
+def cfg():
+    return yaml.safe_load(PARAMS.read_text())
+
+
 @pytest.mark.parametrize("sim", ["true", "false"])
 def test_xacro_expands(sim):
     assert "<robot" in expand(sim=sim)
 
 
-def test_all_actuated_joints_present():
-    import xml.etree.ElementTree as ET
+def test_every_joint_in_the_yaml_reaches_the_urdf(urdf, cfg):
+    mount = cfg["mount"]["parent"] + "_to_" + cfg["robot"]["root_link"]
+    assert {j.get("name") for j in urdf.findall("joint")} == set(cfg["joints"]) | {mount}
 
-    root = ET.fromstring(expand(sim="true"))
-    names = {
-        j.get("name")
-        for j in root.findall("joint")
+
+def test_meshes_exist(cfg):
+    for name, link in cfg["links"].items():
+        if "mesh" in link:
+            assert (PKG / cfg["meshes"]["visual_dir"] / link["mesh"]).is_file(), name
+            if cfg["meshes"]["use_collision_meshes"]:
+                assert (PKG / cfg["meshes"]["collision_dir"] / link["mesh"]).is_file(), name
+
+
+def test_controllers_only_claim_joints_that_exist(urdf):
+    movable = {
+        j.get("name") for j in urdf.findall("joint")
         if j.get("type") in ("revolute", "prismatic", "continuous")
-        and j.find("mimic") is None
     }
-    assert names == EXPECTED_ACTUATED_JOINTS
+    controllers = yaml.safe_load(CONTROLLERS.read_text())
+    for name, block in controllers.items():
+        joints = block.get("ros__parameters", {}).get("joints", [])
+        assert set(joints) <= movable, f"{name} names joints not in the URDF"
 
 
 def test_urdf_tree_is_valid():

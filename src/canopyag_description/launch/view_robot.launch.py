@@ -1,11 +1,9 @@
-"""Show the arm in RViz with sliders for every joint.
+"""Show the robot in RViz with a slider per joint.
 
-No Gazebo, no controllers - this is the fast loop for checking that the
-kinematics in config/arm_parameters.yaml actually match the CAD. Drive each
-slider to its limit and compare against SolidWorks.
+No Gazebo, no controllers - the fast loop for checking that
+config/robot_parameters.yaml matches the CAD.
 
     ros2 launch canopyag_description view_robot.launch.py
-    ros2 launch canopyag_description view_robot.launch.py use_meshes:=true
 """
 
 from launch import LaunchDescription
@@ -19,8 +17,6 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     pkg = FindPackageShare("canopyag_description")
-
-    use_meshes = LaunchConfiguration("use_meshes")
     gui = LaunchConfiguration("gui")
 
     robot_description = ParameterValue(
@@ -28,16 +24,17 @@ def generate_launch_description():
             "xacro ",
             PathJoinSubstitution([pkg, "urdf", "canopyag.urdf.xacro"]),
             " sim:=false",
-            " use_meshes:=", use_meshes,
+            " params_file:=", LaunchConfiguration("params_file"),
         ]),
         value_type=str,
     )
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            "use_meshes", default_value="",
-            description="Override options.use_meshes from arm_parameters.yaml "
-                        "('true'/'false'; empty means use the yaml value).",
+            "params_file",
+            default_value=PathJoinSubstitution([pkg, "config", "robot_parameters.yaml"]),
+            description="Point this at another yaml to view a different build "
+                        "of the robot without touching the installed one.",
         ),
         DeclareLaunchArgument(
             "gui", default_value="true",

@@ -13,7 +13,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Enabled: true
-      Cell Size: 0.25
+      Cell Size: 0.5
       Plane Cell Count: 20
       Color: 160; 160; 164
       Reference Frame: <Fixed Frame>
@@ -33,8 +33,8 @@ Visualization Manager:
       Enabled: true
       Show Arrows: false
       Show Axes: true
-      Show Names: true
-      Marker Scale: 0.15
+      Show Names: false
+      Marker Scale: 0.3
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: world
@@ -48,8 +48,8 @@ Visualization Manager:
     Current:
       Class: rviz_default_plugins/Orbit
       Name: Current View
-      Distance: 2.5
-      Focal Point: {X: 0.2, Y: 0, Z: 0.6}
+      Distance: 4.5
+      Focal Point: {X: 0.55, Y: -1.0, Z: 1.0}
       Pitch: 0.4
       Yaw: 0.9
       Target Frame: <Fixed Frame>

@@ -1,11 +1,6 @@
-"""Spawn the canopy.ag SCARA in Gazebo (gz sim Harmonic) with controllers up.
+"""Spawn the robot in Gazebo (gz sim Harmonic) with controllers up.
 
     ros2 launch canopyag_bringup gazebo.launch.py
-
-Then try it:
-    ros2 control list_controllers
-    ros2 action send_goal /gripper_controller/gripper_cmd \
-        control_msgs/action/GripperCommand "{command: {position: 0.03, max_effort: 10.0}}"
 
 Controllers are spawned in sequence via event handlers rather than all at once:
 joint_state_broadcaster must be active before the trajectory controllers, or
@@ -35,14 +30,12 @@ def generate_launch_description():
     bringup_share = get_package_share_directory("canopyag_bringup")
 
     world = LaunchConfiguration("world")
-    use_meshes = LaunchConfiguration("use_meshes")
 
     robot_description = ParameterValue(
         Command([
             "xacro ",
             PathJoinSubstitution([desc_pkg, "urdf", "canopyag.urdf.xacro"]),
             " sim:=true",
-            " use_meshes:=", use_meshes,
         ]),
         value_type=str,
     )
@@ -96,8 +89,7 @@ def generate_launch_description():
 
     jsb = spawner("joint_state_broadcaster")
     arm = spawner("arm_controller")
-    gripper = spawner("gripper_controller")
-    tool_roll = spawner("tool_roll_controller")
+    crate = spawner("crate_controller")
     # Loaded but not started - see the note in controllers.yaml.
     fwd = spawner("forward_position_controller", "--inactive")
 
@@ -107,11 +99,6 @@ def generate_launch_description():
             default_value=os.path.join(bringup_share, "worlds", "greenhouse.sdf"),
             description="Path to the .sdf world to load.",
         ),
-        DeclareLaunchArgument(
-            "use_meshes", default_value="",
-            description="Override options.use_meshes from arm_parameters.yaml.",
-        ),
-
         gz_resource_path,
         gz_sim,
         clock_bridge,
@@ -119,5 +106,5 @@ def generate_launch_description():
         spawn_robot,
 
         RegisterEventHandler(OnProcessExit(target_action=spawn_robot, on_exit=[jsb])),
-        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[arm, gripper, tool_roll, fwd])),
+        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[arm, crate, fwd])),
     ])

@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<!--
+  Generic URDF builder. Nothing here knows anything about this particular
+  robot: it walks the `links` and `joints` tables in robot_parameters.yaml and
+  emits one <link> or <joint> per entry. Change the CAD, re-run the importer,
+  and this file stays as it is.
+
+  The *_each macros are recursive because xacro has no for-loop. Each call
+  emits the head of the list and recurses on the tail; the xacro:if on the
+  length terminates it.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== materials ===================== -->
+
+  <xacro:macro name="material_each" params="names cfg">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:property name="C" value="${cfg['materials'][names[0]]}"/>
+      <material name="${names[0]}">
+        <color rgba="${C[0]} ${C[1]} ${C[2]} ${C[3]}"/>
+      </material>
+      <xacro:material_each names="${names[1:]}" cfg="${cfg}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- ===================== links ===================== -->
+
+  <xacro:macro name="build_link" params="name cfg">
+    <xacro:property name="L" value="${cfg['links'][name]}"/>
+    <xacro:property name="M" value="${cfg['meshes']}"/>
+    <xacro:property name="S" value="${M['scale'][0]} ${M['scale'][1]} ${M['scale'][2]}"/>
+    <xacro:property name="col_dir"
+                    value="${M['collision_dir'] if M['use_collision_meshes'] else M['visual_dir']}"/>
+
+    <link name="${name}">
+
+      <xacro:if value="${'mass' in L}">
+        <xacro:property name="I" value="${L['inertia']}"/>
+        <inertial>
+          <origin xyz="${L['com_xyz'][0]} ${L['com_xyz'][1]} ${L['com_xyz'][2]}"
+                  rpy="${L['com_rpy'][0]} ${L['com_rpy'][1]} ${L['com_rpy'][2]}"/>
+          <mass value="${L['mass']}"/>
+          <inertia ixx="${I['ixx']}" ixy="${I['ixy']}" ixz="${I['ixz']}"
+                   iyy="${I['iyy']}" iyz="${I['iyz']}" izz="${I['izz']}"/>
+        </inertial>
+      </xacro:if>
+
+      <xacro:if value="${'mesh' in L}">
+        <visual>
+          <origin xyz="${L['visual_xyz'][0]} ${L['visual_xyz'][1]} ${L['visual_xyz'][2]}"
+                  rpy="${L['visual_rpy'][0]} ${L['visual_rpy'][1]} ${L['visual_rpy'][2]}"/>
+          <geometry>
+            <mesh filename="package://${M['package']}/${M['visual_dir']}/${L['mesh']}" scale="${S}"/>
+          </geometry>
+          <material name="${L['material']}"/>
+        </visual>
+        <collision>
+          <origin xyz="${L['visual_xyz'][0]} ${L['visual_xyz'][1]} ${L['visual_xyz'][2]}"
+                  rpy="${L['visual_rpy'][0]} ${L['visual_rpy'][1]} ${L['visual_rpy'][2]}"/>
+          <geometry>
+            <mesh filename="package://${M['package']}/${col_dir}/${L['mesh']}" scale="${S}"/>
+          </geometry>
+        </collision>
+      </xacro:if>
+
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="link_each" params="names cfg">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:build_link name="${names[0]}" cfg="${cfg}"/>
+      <xacro:link_each names="${names[1:]}" cfg="${cfg}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- ===================== joints ===================== -->
+
+  <xacro:macro name="build_joint" params="name cfg">
+    <xacro:property name="J" value="${cfg['joints'][name]}"/>
+    <joint name="${name}" type="${J['type']}">
+      <parent link="${J['parent']}"/>
+      <child  link="${J['child']}"/>
+      <origin xyz="${J['xyz'][0]} ${J['xyz'][1]} ${J['xyz'][2]}"
+              rpy="${J['rpy'][0]} ${J['rpy'][1]} ${J['rpy'][2]}"/>
+
+      <xacro:unless value="${J['type'] == 'fixed'}">
+        <xacro:property name="A" value="${J['axis']}"/>
+        <xacro:property name="Lm" value="${J['limit']}"/>
+        <xacro:property name="D" value="${J['dynamics']}"/>
+        <axis xyz="${A[0]} ${A[1]} ${A[2]}"/>
+        <!-- A continuous joint has no lower/upper, but still needs effort and
+             velocity for the controllers and for Gazebo. -->
+        <xacro:if value="${J['type'] == 'continuous'}">
+          <limit effort="${Lm['effort']}" velocity="${Lm['velocity']}"/>
+        </xacro:if>
+        <xacro:unless value="${J['type'] == 'continuous'}">
+          <limit lower="${Lm['lower']}" upper="${Lm['upper']}"
+                 effort="${Lm['effort']}" velocity="${Lm['velocity']}"/>
+        </xacro:unless>
+        <dynamics damping="${D['damping']}" friction="${D['friction']}"/>
+      </xacro:unless>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="joint_each" params="names cfg">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:build_joint name="${names[0]}" cfg="${cfg}"/>
+      <xacro:joint_each names="${names[1:]}" cfg="${cfg}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- Builds the whole robot plus the world -> root_link mount. -->
+  <xacro:macro name="build_robot" params="cfg">
+    <xacro:material_each names="${list(cfg['materials'].keys())}" cfg="${cfg}"/>
+    <xacro:link_each     names="${list(cfg['links'].keys())}"     cfg="${cfg}"/>
+    <xacro:joint_each    names="${list(cfg['joints'].keys())}"    cfg="${cfg}"/>
+
+    <xacro:property name="Mt" value="${cfg['mount']}"/>
+    <link name="${Mt['parent']}"/>
+    <joint name="${Mt['parent']}_to_${cfg['robot']['root_link']}" type="fixed">
+      <parent link="${Mt['parent']}"/>
+      <child  link="${cfg['robot']['root_link']}"/>
+      <origin xyz="${Mt['xyz'][0]} ${Mt['xyz'][1]} ${Mt['xyz'][2]}"
+              rpy="${Mt['rpy'][0]} ${Mt['rpy'][1]} ${Mt['rpy'][2]}"/>
+    </joint>
+  </xacro:macro>
+
+</robot>

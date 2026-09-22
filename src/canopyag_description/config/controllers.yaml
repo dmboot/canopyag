@@ -1,19 +1,19 @@
 # ============================================================================
 # ros2_control controller manager + controllers
 # ============================================================================
-# This one file is used by BOTH Gazebo (loaded by the gz_ros2_control plugin,
-# see gazebo.xacro) and the real arm (loaded by ros2_control_node). Keep it
-# that way - the whole point of the ros2_control layer is that the controller
-# side is identical in sim and on hardware.
+# Used by BOTH Gazebo (loaded by the gz_ros2_control plugin) and the real
+# robot (loaded by ros2_control_node) - that is the point of the ros2_control
+# layer.
+#
+# The joint names below must match `joints:` in robot_parameters.yaml. If a
+# re-import adds, removes or renames a joint, update this file too;
+# test/test_urdf_parses.py fails the build when the two drift apart.
 # ============================================================================
 
 controller_manager:
   ros__parameters:
-    # 200 Hz. The trajectory controller interpolates at this rate and your CAN
-    # write() must complete inside 5 ms. If the bus can't keep up, lower this
-    # rather than letting write() block - a late write shows up as jerk.
-    update_rate: 200
-    use_sim_time: true          # overridden to false by the real-hardware launch
+    update_rate: 200            # Hz
+    use_sim_time: true          # overridden to false by hardware.launch.py
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
@@ -21,17 +21,13 @@ controller_manager:
     arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-    gripper_controller:
-      type: position_controllers/GripperActionController
-
-    tool_roll_controller:
+    crate_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-    # Handy for bring-up / homing: lets you poke a single joint with
+    # Bring-up / homing: pokes a single joint with
     #   ros2 topic pub /forward_position_controller/commands ...
-    # Inactive by default; activate it INSTEAD of arm_controller, never
-    # alongside (two controllers claiming the same command interface will
-    # refuse to activate).
+    # Activate it INSTEAD of arm_controller, never alongside - two controllers
+    # claiming the same command interface will refuse to activate.
     forward_position_controller:
       type: forward_command_controller/ForwardCommandController
 
@@ -39,60 +35,33 @@ controller_manager:
 arm_controller:
   ros__parameters:
     joints:
-      - z_lift_joint
-      - shoulder_joint
-      - elbow_joint
-      - wrist_roll_joint
-      - tool_pitch_joint
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
-    # Steppers follow commanded position exactly (until they don't). With
-    # open-loop drivers set this true so the controller integrates its own
-    # command as state instead of fighting echoed feedback.
-    open_loop_control: false
+      - joint_z1
+      - joint_1
+      - joint_2
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
     allow_nonzero_velocity_at_trajectory_end: false
     constraints:
       stopped_velocity_tolerance: 0.01
       goal_time: 0.5
-      z_lift_joint:     { trajectory: 0.02, goal: 0.005 }
-      shoulder_joint:   { trajectory: 0.10, goal: 0.01 }
-      elbow_joint:      { trajectory: 0.10, goal: 0.01 }
-      wrist_roll_joint: { trajectory: 0.10, goal: 0.01 }
-      tool_pitch_joint: { trajectory: 0.10, goal: 0.01 }
+      joint_z1: { trajectory: 0.02, goal: 0.005 }
+      joint_1:  { trajectory: 0.10, goal: 0.01 }
+      joint_2:  { trajectory: 0.10, goal: 0.01 }
 
 
-gripper_controller:
+# The crate rides the same gantry but is not part of the arm's kinematic
+# chain, so it gets its own controller and can be moved independently.
+crate_controller:
   ros__parameters:
-    joint: finger_joint
-    # MG996R will happily stall against a tomato and cook itself. allow_stalling
-    # makes a stall count as success instead of aborting the grasp goal.
-    allow_stalling: true
-    max_effort: 15.0
-    goal_tolerance: 0.004
-    stall_velocity_threshold: 0.001
-    stall_timeout: 0.6
-    action_monitor_rate: 20.0
-
-
-tool_roll_controller:
-  ros__parameters:
-    joints:
-      - tool_roll_joint
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
+    joints: [joint_z2]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
 
 
 forward_position_controller:
   ros__parameters:
     joints:
-      - z_lift_joint
-      - shoulder_joint
-      - elbow_joint
-      - wrist_roll_joint
-      - tool_pitch_joint
+      - joint_z1
+      - joint_1
+      - joint_2
     interface_name: position

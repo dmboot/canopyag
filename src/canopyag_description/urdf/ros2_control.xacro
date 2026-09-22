@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  One <ros2_control> system holding every non-fixed joint from
+  robot_parameters.yaml. `sim` picks the hardware plugin and is the only
+  difference between Gazebo and the real robot - the URDF, the controllers and
+  MoveIt are identical either way.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="axis_each" params="names cfg">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:property name="J" value="${cfg['joints'][names[0]]}"/>
+      <joint name="${names[0]}">
+        <command_interface name="position">
+          <xacro:if value="${'lower' in J['limit']}">
+            <param name="min">${J['limit']['lower']}</param>
+            <param name="max">${J['limit']['upper']}</param>
+          </xacro:if>
+        </command_interface>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <xacro:axis_each names="${names[1:]}" cfg="${cfg}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="build_ros2_control" params="cfg sim can_interface can_bitrate">
+    <ros2_control name="${cfg['robot']['name']}" type="system">
+      <hardware>
+        <xacro:if value="${sim}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${sim}">
+          <!-- Implemented in canopyag_hardware, which does not exist yet. -->
+          <plugin>canopyag_hardware/CanopyagSystem</plugin>
+          <param name="can_interface">${can_interface}</param>
+          <param name="can_bitrate">${can_bitrate}</param>
+        </xacro:unless>
+      </hardware>
+
+      <xacro:axis_each cfg="${cfg}"
+        names="${[n for n, J in cfg['joints'].items() if J['type'] != 'fixed']}"/>
+    </ros2_control>
+  </xacro:macro>
+
+</robot>

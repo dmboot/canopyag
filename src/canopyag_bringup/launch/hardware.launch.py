@@ -1,4 +1,4 @@
-"""Bring up the REAL arm: ros2_control_node + the CAN/serial hardware interfaces.
+"""Bring up the REAL robot: ros2_control_node + the CAN/serial hardware interfaces.
 
     sudo ip link set can0 type can bitrate 500000
     sudo ip link set can0 up
@@ -79,8 +79,7 @@ def generate_launch_description():
             target_action=jsb,
             on_exit=[
                 spawner("arm_controller", "--inactive"),
-                spawner("gripper_controller"),
-                spawner("tool_roll_controller"),
+                spawner("crate_controller"),
             ],
         )),
     ])
