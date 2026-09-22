@@ -137,7 +137,7 @@ joints:
     limit: {effort: 50.0, velocity: 1.5}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_3:
-    type: fixed
+    type: continuous
     parent: endeffector_link
     child: end_effector
     xyz: [0.30051, -0.054219, -0.041703]
