@@ -1,5 +1,6 @@
-# Planning limits. MoveIt reads these on top of the URDF limits, and Pilz
-# refuses to plan without acceleration limits, so every joint has one.
+# Planning limits. MoveIt reads these on top of the URDF limits, Pilz refuses
+# to plan without acceleration limits, and scripts/demo_path.py times its
+# point-to-point moves from them - so every joint has both.
 # Velocities match robot_parameters.yaml; accelerations are guesses until the
 # real drives are known.
 default_velocity_scaling_factor: 0.5

@@ -186,9 +186,17 @@ small and the CAD still changes. It has two planning groups:
   moves the carriage and the arm at once and they arrive together.
 - `crate`: `z_crate`. Not planned; driven directly by the demo script.
 
-The default planner is **Pilz PTP**: deterministic joint-space moves, the same
-path every run, which is what a hard-coded demo wants. OMPL is loaded too, for
-dragging the interactive marker around in RViz.
+The demo does not use a planner. Each waypoint is a point-to-point move the
+script computes itself: a straight line in joint space, one trapezoidal
+profile for all four joints so they start and stop together, each joint held
+to its own limit in `config/joint_limits.yaml`. MoveIt collision-checks every
+20 ms sample (`/check_state_validity`, crate included) and executes it
+(`/execute_trajectory`), so the path is the same every run.
+
+Pilz PTP would do the same, but it gives every joint in a group the strictest
+limit of any of them: the carriage's 0.25 m/s and 0.5 m/s² become 0.25 rad/s
+and 0.5 rad/s² for the revolutes, about 6x too slow. For planning by hand in
+RViz, OMPL is the default pipeline and Pilz is still loaded.
 
 `scripts/demo_path.py` has the path as a plain list, `WAYPOINTS`: the arm
 works its way up three levels, reaching left and right and turning the end

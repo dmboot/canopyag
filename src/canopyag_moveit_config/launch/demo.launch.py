@@ -36,9 +36,12 @@ def generate_launch_description():
         .joint_limits(file_path="config/joint_limits.yaml")
         .pilz_cartesian_limits(file_path="config/pilz_cartesian_limits.yaml")
         .trajectory_execution(file_path="config/moveit_controllers.yaml")
+        # The demo does its own point-to-point moves (see demo_path.py); these
+        # are for planning by hand in RViz. OMPL is the default because Pilz
+        # slows every joint to the carriage's limits.
         .planning_pipelines(
-            default_planning_pipeline="pilz_industrial_motion_planner",
-            pipelines=["pilz_industrial_motion_planner", "ompl"],
+            default_planning_pipeline="ompl",
+            pipelines=["ompl", "pilz_industrial_motion_planner"],
         )
         .to_moveit_configs()
     )
@@ -52,7 +55,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    # controllers.yaml sets use_sim_time for Gazebo; the dict after it wins.
+    # Mock hardware runs on wall-clock time, not Gazebo's /clock.
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
