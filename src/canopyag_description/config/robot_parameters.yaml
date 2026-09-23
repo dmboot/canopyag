@@ -94,34 +94,34 @@ links:
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     mass: 0.721634261
-    com_xyz: [0.180942676, 0.052919112, 0.041385882]
+    com_xyz: [0.188522371, 1.7437e-05, 0.041385882]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.001240167028, ixy: -0.00216402487, ixz: -5.4906179e-05, iyy: 0.00800580615, iyz: -1.6069544e-05, izz: 0.009128462002}
+    inertia: {ixx: 0.000607208842, ixy: -9.4873e-07, ixz: -5.7209426e-05, iyy: 0.008638764337, iyz: -1.6325e-08, izz: 0.009128462002}
   endeffector_link:
     mesh: endeffector_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    mass: 0.256431399
-    com_xyz: [0.134032717, 2.429e-06, -0.027018389]
+    mass: 0.25643225
+    com_xyz: [0.134032575, 2.51e-06, -0.027018373]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 7.0634898e-05, ixy: 6.8249e-08, ixz: 2.0818665e-05, iyy: 0.001591407084, iyz: -4.836e-09, izz: 0.001640232323}
+    inertia: {ixx: 7.0635337e-05, ixy: 6.9226e-08, ixz: 2.0818838e-05, iyy: 0.001591408915, iyz: -4.942e-09, izz: 0.001640234528}
   endeffector:
     mesh: endeffector.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    mass: 0.243451076
-    com_xyz: [-0.000105409, -0.085482611, -0.020592098]
+    mass: 0.243451131
+    com_xyz: [0.085482593, -0.000105411, -0.020592094]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 9.8850204e-05, ixy: -2.6645e-07, ixz: 9.66603e-07, iyy: 8.0998513e-05, iyz: 2.608127e-06, izz: 0.000136737198}
+    inertia: {ixx: 8.0998509e-05, ixy: 2.66453e-07, ixz: -2.608117e-06, iyy: 9.8850236e-05, iyz: 9.66597e-07, izz: 0.000136737206}
 
 joints:
   z_crate:
     type: prismatic
     parent: gantry
     child: crate
-    xyz: [0.071, -0.00085, 0.24636]
+    xyz: [0.071, -0.00085, 0.0]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 200.0, velocity: 0.25, lower: 0.0, upper: 1.05}
@@ -137,7 +137,7 @@ joints:
     type: prismatic
     parent: gantry
     child: carriage
-    xyz: [0.071, -0.00085, 0.97749]
+    xyz: [0.071, -0.00085, 0.165]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 200.0, velocity: 0.25, lower: -0.56113, upper: 0.48887}
@@ -155,7 +155,7 @@ joints:
     type: continuous
     parent: mid_link
     child: endeffector_link
-    xyz: [0.32922, 0.096251, 0.0]
+    xyz: [0.343, 0.0, 0.0]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 1.5}
