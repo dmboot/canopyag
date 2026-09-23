@@ -24,11 +24,7 @@ robot:
 mount:
   parent: world
   xyz: [0.0, 0.0, 0.0]
-  rpy: [1.5707963, 0.0, 0.0]
-  note: |-
-    The assembly is modelled Y-up: joint_z1 lifts along +Y and the column's
-    long axis is Y. ROS, RViz and Gazebo are Z-up, so rotate +90 deg about X
-    here. Set this back to [0, 0, 0] once the CAD is exported Z-up.
+  rpy: [0.0, 0.0, 0.0]
 
 meshes:
   package: canopyag_description
@@ -45,109 +41,131 @@ materials:
   structure: [0.7922, 0.8196, 0.9333, 1.0]
   crate: [1.0, 1.0, 1.0, 1.0]
 
+# Prismatic joints whose moving mass is balanced by a counterweight on the
+# other side of the gantry. `mass` is the counterweight itself; when it
+# equals the mass that joint carries, the axis feels no gravity load.
+# The links keep their real mass and inertia either way - only gravity along
+# the axis is offset. Gazebo applies it as a constant upward force on the
+# joint's child link (see canopyag_bringup/launch/gazebo.launch.py).
+counterweights:
+  z_carriage:
+    note: |-
+      Assumed fully balanced: carriage + mid_link + endeffector_link +
+      endeffector from the CAD. Replace with the weighed counterweight.
+    mass: 2.105947
+  z_crate:
+    note: |-
+      Assumed fully balanced against the empty crate from the CAD. A full
+      crate is heavier than its counterweight - raise crate mass or add a
+      payload link if that load matters.
+    mass: 0.485111
+
 links:
   gantry:
-    note: |-
-      gantry.stl came out of the exporter in a frame rotated -90 deg about X
-      relative to the gantry link frame: its bounding box and its inertia
-      tensor disagree by exactly that, and every other link matches. The
-      visual_rpy below puts the mesh back. The real fix is the reference
-      coordinate system of the base link in SolidWorks - set visual_rpy to
-      [0, 0, 0] once that is corrected.
     mesh: gantry.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
-    visual_rpy: [-1.5707963, 0.0, 0.0]
-    mass: 4.865445211
-    com_xyz: [0.483091173, 0.737554686, 1.979702241]
+    visual_rpy: [0.0, 0.0, 0.0]
+    mass: 5.434082892
+    com_xyz: [0.005832611, -0.000182447, 1.071368327]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.101420482246, ixy: -1.067751e-06, ixz: -5.491538e-06, iyy: 0.008605789311, iyz: 1.419197e-06, izz: 0.098793849332}
-  carriage_link:
-    mesh: carriage_link.stl
+    inertia: {ixx: 0.324675201988, ixy: 5.585539e-06, ixz: -8.03894e-07, iyy: 0.322069174878, iyz: 4.139705e-06, izz: 0.008758488134}
+  crate:
+    mesh: crate.stl
+    material: crate
+    visual_xyz: [0.0, 0.0, 0.0]
+    visual_rpy: [0.0, 0.0, 0.0]
+    mass: 0.485110993
+    com_xyz: [-0.006951772, 0.0, 0.080630452]
+    com_rpy: [0.0, 0.0, 0.0]
+    inertia: {ixx: 0.003479537648, ixy: 0.0, ixz: 2.048e-09, iyy: 0.000958554753, iyz: 0.0, izz: 0.002532085602}
+  carriage:
+    mesh: carriage.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     mass: 0.884430982
-    com_xyz: [0.584360871, 0.077251769, 1.288316874]
+    com_xyz: [0.029602932, 7.3303e-05, 0.072251769]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.003669525939, ixy: -2.823682e-06, ixz: 9.80408e-07, iyy: 0.003379935072, iyz: 2.17271e-07, izz: 0.001701411764}
+    inertia: {ixx: 0.003669525939, ixy: -9.80408e-07, ixz: -2.823682e-06, iyy: 0.001701411764, iyz: -2.17271e-07, izz: 0.003379935072}
   mid_link:
     mesh: mid_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     mass: 0.721634261
-    com_xyz: [0.188522371, 0.041385882, -1.7437e-05]
+    com_xyz: [0.180942676, 0.052919112, 0.041385882]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000607208841, ixy: -5.7209426e-05, ixz: 9.4873e-07, iyy: 0.009128462002, iyz: 1.6325e-08, izz: 0.008638764337}
+    inertia: {ixx: 0.001240167028, ixy: -0.00216402487, ixz: -5.4906179e-05, iyy: 0.00800580615, iyz: -1.6069544e-05, izz: 0.009128462002}
   endeffector_link:
     mesh: endeffector_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    mass: 0.499882756
-    com_xyz: [0.22053678, -0.031106576, -0.041321722]
+    mass: 0.256431399
+    com_xyz: [0.134032717, 2.429e-06, -0.027018389]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000161843765, ixy: 8.905591e-06, ixz: 1.9804318e-05, iyy: 0.001680048059, iyz: 2.585116e-06, izz: 0.001776970617}
-  end_effector:
-    mesh: end_effector.stl
+    inertia: {ixx: 7.0634898e-05, ixy: 6.8249e-08, ixz: 2.0818665e-05, iyy: 0.001591407084, iyz: -4.836e-09, izz: 0.001640232323}
+  endeffector:
+    mesh: endeffector.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    mass: 0.243451342
-    com_xyz: [-0.0146252, 0.014684948, -0.001894609]
+    mass: 0.243451076
+    com_xyz: [-0.000105409, -0.085482611, -0.020592098]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 8.0998577e-05, ixy: -2.608112e-06, ixz: 2.66501e-07, iyy: 0.000136737301, iyz: 9.66549e-07, izz: 9.8850254e-05}
-  crate_link:
-    mesh: crate_link.stl
-    material: crate
-    visual_xyz: [0.0, 0.0, 0.0]
-    visual_rpy: [0.0, 0.0, 0.0]
-    mass: 0.485110993
-    com_xyz: [0.030109766, 0.10841127, 0.07714488]
-    com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000966804891, ixy: -0.000113638823, ixz: 1.48e-10, iyy: 0.002523835464, iyz: -2.042e-09, izz: 0.003479537648}
+    inertia: {ixx: 9.8850204e-05, ixy: -2.6645e-07, ixz: 9.66603e-07, iyy: 8.0998513e-05, iyz: 2.608127e-06, izz: 0.000136737198}
 
 joints:
-  joint_z1:
+  z_crate:
     type: prismatic
     parent: gantry
-    child: carriage_link
-    xyz: [0.0, 0.0, 0.0]
+    child: crate
+    xyz: [0.071, -0.00085, 0.24636]
     rpy: [0.0, 0.0, 0.0]
-    axis: [0.0, 1.0, 0.0]
-    limit: {effort: 200.0, velocity: 0.25, lower: 0.0, upper: 1.3}
+    axis: [0.0, 0.0, 1.0]
+    limit: {effort: 200.0, velocity: 0.25, lower: 0.0, upper: 1.05}
+    dynamics: {damping: 0.0, friction: 0.0}
+  z_carriage:
+    note: |-
+      The export's limits (0.17 .. 1.22) are measured from the crate's zero
+      (gantry z 0.24636), but this joint's zero is where the carriage sits in
+      the CAD assembly (gantry z 0.97749), 0.73113 higher. Taken as exported
+      the carriage would leave the top of the 1.66 m gantry. Shifted here:
+      0.17 - 0.73113 = -0.56113, 1.22 - 0.73113 = 0.48887. Put the carriage
+      at its home position in SolidWorks before exporting and this goes away.
+    type: prismatic
+    parent: gantry
+    child: carriage
+    xyz: [0.071, -0.00085, 0.97749]
+    rpy: [0.0, 0.0, 0.0]
+    axis: [0.0, 0.0, 1.0]
+    limit: {effort: 200.0, velocity: 0.25, lower: -0.56113, upper: 0.48887}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_1:
     type: revolute
-    parent: carriage_link
+    parent: carriage
     child: mid_link
-    xyz: [0.68576, 0.10285, 1.2884]
+    xyz: [0.131, 0.0, 0.09785]
     rpy: [0.0, 0.0, 0.0]
-    axis: [0.0, 1.0, 0.0]
+    axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 1.5, lower: -1.57, upper: 1.57}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_2:
     type: continuous
     parent: mid_link
     child: endeffector_link
-    xyz: [0.343, 0.0, 0.0]
-    rpy: [1.5708, -1.4686, 3.1416]
+    xyz: [0.32922, 0.096251, 0.0]
+    rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 1.5}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_3:
     type: continuous
     parent: endeffector_link
-    child: end_effector
-    xyz: [0.30051, -0.054219, -0.041703]
-    rpy: [-1.5708, 0.0, 2.299]
-  joint_z2:
-    type: prismatic
-    parent: gantry
-    child: crate_link
-    xyz: [0.0, 0.0, 0.0]
+    child: endeffector
+    xyz: [0.25484, 0.0, -0.035796]
     rpy: [0.0, 0.0, 0.0]
-    axis: [0.072409, -0.99738, 0.0]
-    limit: {effort: 200.0, velocity: 0.25, lower: 0.0, upper: 1.3}
+    axis: [0.0, 0.0, 1.0]
+    limit: {effort: 50.0, velocity: 1.5}
     dynamics: {damping: 0.0, friction: 0.0}

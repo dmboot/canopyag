@@ -35,25 +35,27 @@ controller_manager:
 arm_controller:
   ros__parameters:
     joints:
-      - joint_z1
+      - z_carriage
       - joint_1
       - joint_2
+      - joint_3
     command_interfaces: [position]
     state_interfaces: [position, velocity]
     allow_nonzero_velocity_at_trajectory_end: false
     constraints:
       stopped_velocity_tolerance: 0.01
       goal_time: 0.5
-      joint_z1: { trajectory: 0.02, goal: 0.005 }
-      joint_1:  { trajectory: 0.10, goal: 0.01 }
-      joint_2:  { trajectory: 0.10, goal: 0.01 }
+      z_carriage: { trajectory: 0.02, goal: 0.005 }
+      joint_1:    { trajectory: 0.10, goal: 0.01 }
+      joint_2:    { trajectory: 0.10, goal: 0.01 }
+      joint_3:    { trajectory: 0.10, goal: 0.01 }
 
 
 # The crate rides the same gantry but is not part of the arm's kinematic
 # chain, so it gets its own controller and can be moved independently.
 crate_controller:
   ros__parameters:
-    joints: [joint_z2]
+    joints: [z_crate]
     command_interfaces: [position]
     state_interfaces: [position, velocity]
 
@@ -61,7 +63,8 @@ crate_controller:
 forward_position_controller:
   ros__parameters:
     joints:
-      - joint_z1
+      - z_carriage
       - joint_1
       - joint_2
+      - joint_3
     interface_name: position

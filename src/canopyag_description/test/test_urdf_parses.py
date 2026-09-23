@@ -1,7 +1,8 @@
 """Guard rail: the xacro must expand, the tree must be valid, the meshes must
-exist and controllers.yaml must name joints that are actually in the URDF.
+exist, controllers.yaml must name joints that are actually in the URDF, and
+every counterweight must sit on a prismatic joint.
 
-These are the four things that break when you re-import a SolidWorks export.
+These are the things that break when you re-import a SolidWorks export.
 
 Run standalone: pytest src/canopyag_description/test/test_urdf_parses.py
 """
@@ -75,3 +76,9 @@ def test_urdf_tree_is_valid():
         path = fh.name
     result = subprocess.run(["check_urdf", path], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_counterweights_sit_on_prismatic_joints(cfg):
+    for joint, cw in (cfg.get("counterweights") or {}).items():
+        assert cfg["joints"].get(joint, {}).get("type") == "prismatic", joint
+        assert float(cw["mass"]) >= 0.0, joint

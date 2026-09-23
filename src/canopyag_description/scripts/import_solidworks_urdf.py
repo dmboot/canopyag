@@ -9,7 +9,7 @@ from the export's links, joints, origins, axes, limits and inertials.
 Values you tuned by hand are kept: for every link and joint that still exists
 under the same name, the keys in PRESERVE below are carried over from the old
 yaml instead of being overwritten, as are the whole `mount`, `meshes` and
-`materials` sections. So the loop is: re-export from SolidWorks, re-run this,
+`materials` and `counterweights` sections. So the loop is: re-export from SolidWorks, re-run this,
 and only the geometry moves. Pass --no-preserve to start from a clean slate.
 
 The export is not always self-consistent (see the frame check at the bottom of
@@ -109,11 +109,28 @@ def parse_export(urdf_path):
             if jtype != "continuous":
                 limit["lower"] = float(lim.get("lower", 0)) if lim is not None else 0.0
                 limit["upper"] = float(lim.get("upper", 0)) if lim is not None else 0.0
+            # The exporter writes a revolute joint with no limits set in its
+            # dialog as lower == upper == 0: a joint that cannot move. That is
+            # how it spells "continuous".
+            if jtype == "revolute" and limit["lower"] == limit["upper"] == 0.0:
+                entry["type"] = "continuous"
+                del limit["lower"], limit["upper"]
             entry["limit"] = limit
         joints[sanitize(je.get("name"))] = entry
 
     materials = {v: list(k) for k, v in colors.items()}
     return links, joints, materials
+
+
+def subtree_mass(joint, links, joints):
+    """Mass of everything that moves with `joint`: its child link and every
+    link below it. This is what a counterweight on that joint has to carry."""
+    todo, total = [joints[joint]["child"]], 0.0
+    while todo:
+        link = todo.pop()
+        total += links.get(link, {}).get("mass", 0.0)
+        todo += [J["child"] for J in joints.values() if J["parent"] == link]
+    return total
 
 
 def root_link_of(links, joints):
@@ -198,7 +215,7 @@ def note_lines(entry, indent):
                                     for line in str(text).strip().splitlines()]
 
 
-def emit(name, root, mount, meshes, materials, links, joints, notes):
+def emit(name, root, mount, meshes, materials, links, joints, counterweights, notes):
     out = [
         "# ===========================================================================",
         f"# {name} - every number the URDF is built from",
@@ -244,6 +261,21 @@ def emit(name, root, mount, meshes, materials, links, joints, notes):
     ]
     for mname, rgba in materials.items():
         out.append(f"  {mname}: {vec(rgba)}")
+
+    out += [
+        "",
+        "# Prismatic joints whose moving mass is balanced by a counterweight on the",
+        "# other side of the gantry. `mass` is the counterweight itself; when it",
+        "# equals the mass that joint carries, the axis feels no gravity load.",
+        "# The links keep their real mass and inertia either way - only gravity along",
+        "# the axis is offset. Gazebo applies it as a constant upward force on the",
+        "# joint's child link (see canopyag_bringup/launch/gazebo.launch.py).",
+        "counterweights:" + ("" if counterweights else " {}"),
+    ]
+    for jname, C in counterweights.items():
+        out.append(f"  {jname}:")
+        out += note_lines(C, "    ")
+        out.append(f"    mass: {num(float(C['mass']))}")
 
     out += ["", "links:"]
     for lname, L in links.items():
@@ -322,6 +354,16 @@ def main():
 
     notes, kept = [], []
 
+    # Counterweights are hand-written, not in the export. Keep the ones whose
+    # joint still exists and is still prismatic.
+    counterweights = {}
+    for jname, C in (old.get("counterweights") or {}).items():
+        if joints.get(jname, {}).get("type") == "prismatic":
+            counterweights[jname] = C
+        else:
+            notes.append(f"counterweights.{jname} dropped - no prismatic joint "
+                         f"of that name in the export")
+
     # carry hand-tuned values over
     for kind, table, keys in (("link", links, PRESERVE["link"]),
                               ("joint", joints, PRESERVE["joint"])):
@@ -362,7 +404,7 @@ def main():
     missing = [L["mesh"] for L in links.values()
                if "mesh" in L and not (dst_dir / L["mesh"]).exists()]
 
-    text = emit(name, root, mount, meshes, materials, links, joints, notes)
+    text = emit(name, root, mount, meshes, materials, links, joints, counterweights, notes)
     if not args.dry_run:
         out_yaml.parent.mkdir(parents=True, exist_ok=True)
         out_yaml.write_text(text)
@@ -379,6 +421,10 @@ def main():
 
     for n in notes:
         print(f"  note: {n}")
+    for jname, C in counterweights.items():
+        carried = subtree_mass(jname, links, joints)
+        print(f"  counterweight {jname}: {float(C['mass']):.3f} kg against "
+              f"{carried:.3f} kg moving -> net {carried - float(C['mass']):+.3f} kg on the axis")
     for m in missing:
         print(f"  WARNING: mesh {m} not found - copy it into {meshes['visual_dir']}/")
     for lname, com, lo, hi in check_frames(links, dst_dir):
