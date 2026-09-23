@@ -49,13 +49,37 @@ Current chain, straight from the CAD:
 
 ```
 world
-└── gantry                                    (fixed mount)
-    ├── joint_z1  prismatic  0 .. 1.3 m       carriage_link
-    │   └── joint_1  revolute  ±1.57 rad      mid_link
-    │       └── joint_2  continuous           endeffector_link
-    │           └── joint_3  fixed            end_effector
-    └── joint_z2  prismatic  0 .. 1.3 m       crate_link
+└── gantry                                         (fixed mount)
+    ├── z_carriage  prismatic  -0.561 .. 0.489 m   carriage       counterweighted
+    │   └── joint_1  revolute  ±1.57 rad           mid_link
+    │       └── joint_2  continuous                endeffector_link
+    │           └── joint_3  continuous            endeffector
+    └── z_crate     prismatic  0 .. 1.05 m         crate          counterweighted
 ```
+
+The crate and the carriage ride the same rail, with the carriage above the
+crate. Nothing in the URDF stops them overlapping at intermediate heights;
+keep `z_carriage + 0.731 >= z_crate + 0.17` until MoveIt knows about it.
+
+### Counterweights
+
+Both axes are counterweighted on the other side of the gantry, so the drives
+see (almost) no gravity load. The `counterweights:` section of
+`robot_parameters.yaml` records the counterweight mass per prismatic joint.
+The links keep their real mass, centre of mass and inertia, so the arm's
+dynamics are unchanged; only gravity along the axis is offset.
+
+URDF cannot express this, and Gazebo Harmonic ignores per-link `<gravity>`, so
+`gazebo.launch.py` sends each counterweight as a constant upward force
+(`mass * 9.8` N, world +Z) on the joint's child link, through the
+`ApplyLinkWrench` system loaded by the world. The masses there now are the
+CAD mass of each moving subtree (perfect balance); replace them with the
+weighed counterweights. The importer prints the net load per axis on every run.
+
+Not modelled: the counterweight's own inertia. It moves opposite the carriage,
+so the drive accelerates roughly twice the carriage mass (plus pulleys). That
+matters once the axes are effort-controlled, not with the position control
+used now.
 
 ## Re-importing from SolidWorks
 
@@ -70,7 +94,8 @@ python3 src/canopyag_description/scripts/import_solidworks_urdf.py \
 That copies the STLs into `meshes/visual/` and rewrites
 `robot_parameters.yaml` from the export. Values you tuned by hand survive:
 per link `note`, `material`, `visual_xyz`, `visual_rpy`; per joint `note`,
-`limit`, `dynamics`; and the whole `mount`, `meshes` and `materials` sections.
+`limit`, `dynamics`; and the whole `mount`, `meshes`, `materials` and
+`counterweights` sections.
 Everything else - topology, origins, axes, mass, inertia - comes back fresh
 from the export. `--dry-run` reports without writing, `--no-preserve` starts
 clean.
@@ -81,13 +106,16 @@ frame shows up before you ever open RViz.
 
 Two things it cannot know about, so check them after a re-import:
 
-- **Joint names.** Spaces are stripped (`joint z1` -> `joint_z1`). If you
+- **Joint names.** Spaces are stripped (`joint 1 ` -> `joint_1`). If you
   rename or add a joint in SolidWorks, update `config/controllers.yaml` to
   match; the test below fails the build if they drift apart.
 - **The exporter leaves effort and velocity at 0** unless you fill them in in
   the export dialog. Zero means "cannot move" to Gazebo and MoveIt, so the
   importer substitutes usable defaults and prints a note. Replace them with
   real numbers when you have them.
+- **A revolute joint with lower == upper == 0** is how the exporter writes a
+  joint whose limits were left empty. The importer turns it into a
+  `continuous` joint.
 
 ```bash
 colcon test --packages-select canopyag_description
@@ -99,13 +127,11 @@ are in the URDF.
 
 ## Known issues in the current export
 
-- **The assembly is modelled Y-up.** `mount.rpy` in `robot_parameters.yaml`
-  rotates it +90° about X so the robot stands upright in RViz and Gazebo.
-  Export Z-up and set it back to `[0, 0, 0]`.
-- **`gantry.stl` is rotated -90° about X relative to its own link frame** -
-  its bounding box and its inertia tensor disagree by exactly that, and no
-  other link does. `links.gantry.visual_rpy` compensates. The real fix is the
-  reference coordinate system of the base link in SolidWorks.
+- **The carriage is not at its home position in the assembly.** Its limits
+  were entered on the crate's scale (from gantry height 0.246 m), but its joint
+  zero is where it sits in the CAD, 0.731 m higher. `joints.z_carriage.limit`
+  is shifted by hand to match (see its `note`). Put the carriage at home in
+  SolidWorks before exporting, re-enter the limits, and drop the shift.
 - **Collision uses the raw visual meshes** (`meshes.use_collision_meshes:
   false`). Fine for RViz and MoveIt. Before running Gazebo seriously, put
   decimated copies in `meshes/collision/` and flip the flag - the raw exports
