@@ -140,7 +140,7 @@ joints:
     xyz: [0.071, -0.00085, 0.165]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 0.25, lower: -0.56113, upper: 0.48887}
+    limit: {effort: 200.0, velocity: 0.25, lower: 0.165, upper: 1.22}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_1:
     type: revolute
@@ -166,6 +166,6 @@ joints:
     child: endeffector
     xyz: [0.25484, 0.0, -0.035796]
     rpy: [0.0, 0.0, 0.0]
-    axis: [0.0, 0.0, 1.0]
+    axis: [0.0, 0.0, -1.0]
     limit: {effort: 50.0, velocity: 1.5}
     dynamics: {damping: 0.0, friction: 0.0}
