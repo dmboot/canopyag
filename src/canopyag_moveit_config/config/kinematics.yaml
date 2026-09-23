@@ -1,0 +1,8 @@
+# 4 DOF (lift + three vertical revolutes): position plus yaw, never a full
+# 6D pose, so solve for position only. Only used for dragging the
+# interactive marker in RViz; the demo plans in joint space.
+arm:
+  kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+  kinematics_solver_search_resolution: 0.005
+  kinematics_solver_timeout: 0.05
+  position_only_ik: true

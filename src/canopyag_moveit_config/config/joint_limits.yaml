@@ -1,0 +1,33 @@
+# Planning limits. MoveIt reads these on top of the URDF limits, and Pilz
+# refuses to plan without acceleration limits, so every joint has one.
+# Velocities match robot_parameters.yaml; accelerations are guesses until the
+# real drives are known.
+default_velocity_scaling_factor: 0.5
+default_acceleration_scaling_factor: 0.5
+
+joint_limits:
+  z_carriage:
+    has_velocity_limits: true
+    max_velocity: 0.25
+    has_acceleration_limits: true
+    max_acceleration: 0.5
+  z_crate:
+    has_velocity_limits: true
+    max_velocity: 0.25
+    has_acceleration_limits: true
+    max_acceleration: 0.5
+  joint_1:
+    has_velocity_limits: true
+    max_velocity: 1.5
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  joint_2:
+    has_velocity_limits: true
+    max_velocity: 1.5
+    has_acceleration_limits: true
+    max_acceleration: 3.0
+  joint_3:
+    has_velocity_limits: true
+    max_velocity: 1.5
+    has_acceleration_limits: true
+    max_acceleration: 3.0

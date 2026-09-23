@@ -11,6 +11,8 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="canopyag">
 
   <xacro:arg name="sim"           default="true"/>
+  <!-- Only read when sim is false: mock hardware instead of the CAN bus. -->
+  <xacro:arg name="mock"          default="false"/>
   <xacro:arg name="can_interface" default="can0"/>
   <xacro:arg name="can_bitrate"   default="500000"/>
   <xacro:arg name="params_file"
@@ -27,7 +29,7 @@
 
   <xacro:build_robot cfg="${cfg}"/>
 
-  <xacro:build_ros2_control cfg="${cfg}" sim="${sim}"
+  <xacro:build_ros2_control cfg="${cfg}" sim="${sim}" mock="$(arg mock)"
                             can_interface="$(arg can_interface)"
                             can_bitrate="$(arg can_bitrate)"/>
 

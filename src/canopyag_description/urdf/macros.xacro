@@ -54,11 +54,25 @@
           </geometry>
           <material name="${L['material']}"/>
         </visual>
+        <xacro:unless value="${'collision_box' in L}">
+          <collision>
+            <origin xyz="${L['visual_xyz'][0]} ${L['visual_xyz'][1]} ${L['visual_xyz'][2]}"
+                    rpy="${L['visual_rpy'][0]} ${L['visual_rpy'][1]} ${L['visual_rpy'][2]}"/>
+            <geometry>
+              <mesh filename="package://${M['package']}/${col_dir}/${L['mesh']}" scale="${S}"/>
+            </geometry>
+          </collision>
+        </xacro:unless>
+      </xacro:if>
+
+      <!-- A hand-written box replaces the mesh for collision: cheap to check,
+           and it does not change when the CAD does. -->
+      <xacro:if value="${'collision_box' in L}">
+        <xacro:property name="B" value="${L['collision_box']}"/>
         <collision>
-          <origin xyz="${L['visual_xyz'][0]} ${L['visual_xyz'][1]} ${L['visual_xyz'][2]}"
-                  rpy="${L['visual_rpy'][0]} ${L['visual_rpy'][1]} ${L['visual_rpy'][2]}"/>
+          <origin xyz="${B['xyz'][0]} ${B['xyz'][1]} ${B['xyz'][2]}" rpy="0 0 0"/>
           <geometry>
-            <mesh filename="package://${M['package']}/${col_dir}/${L['mesh']}" scale="${S}"/>
+            <box size="${B['size'][0]} ${B['size'][1]} ${B['size'][2]}"/>
           </geometry>
         </collision>
       </xacro:if>

@@ -13,7 +13,9 @@
 controller_manager:
   ros__parameters:
     update_rate: 200            # Hz
-    use_sim_time: true          # overridden to false by hardware.launch.py
+    # No use_sim_time here: gz_ros2_control forces it to true in Gazebo, and a
+    # node-specific entry in this file would beat the launch files' `false`
+    # on hardware and mock, leaving the controller manager waiting for /clock.
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster

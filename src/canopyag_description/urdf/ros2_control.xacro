@@ -1,9 +1,13 @@
 <?xml version="1.0"?>
 <!--
   One <ros2_control> system holding every non-fixed joint from
-  robot_parameters.yaml. `sim` picks the hardware plugin and is the only
-  difference between Gazebo and the real robot - the URDF, the controllers and
-  MoveIt are identical either way.
+  robot_parameters.yaml. `sim` and `mock` pick the hardware plugin and are the
+  only difference between Gazebo, mock hardware and the real robot - the URDF,
+  the controllers and MoveIt are identical either way.
+
+  mock:=true uses ros2_control's mock_components/GenericSystem: every command
+  is reflected straight back as state. No physics, no hardware - what the
+  MoveIt demo runs on until the real axes exist.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
@@ -24,13 +28,16 @@
     </xacro:if>
   </xacro:macro>
 
-  <xacro:macro name="build_ros2_control" params="cfg sim can_interface can_bitrate">
+  <xacro:macro name="build_ros2_control" params="cfg sim mock can_interface can_bitrate">
     <ros2_control name="${cfg['robot']['name']}" type="system">
       <hardware>
         <xacro:if value="${sim}">
           <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </xacro:if>
-        <xacro:unless value="${sim}">
+        <xacro:if value="${mock and not sim}">
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${sim or mock}">
           <!-- Implemented in canopyag_hardware, which does not exist yet. -->
           <plugin>canopyag_hardware/CanopyagSystem</plugin>
           <param name="can_interface">${can_interface}</param>

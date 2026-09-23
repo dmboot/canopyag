@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!--
+  Semantic description for MoveIt. Hand-written, not from the Setup
+  Assistant: the robot is small and the CAD still changes, so it is easier to
+  keep this in step with robot_parameters.yaml by hand.
+
+  Collision geometry is the collision_box of each link in
+  robot_parameters.yaml, not the meshes.
+-->
+<robot name="canopyag">
+
+  <!-- The carriage and the SCARA arm. One group, so a PTP plan moves every
+       joint at once and they all arrive together. -->
+  <group name="arm">
+    <joint name="z_carriage"/>
+    <joint name="joint_1"/>
+    <joint name="joint_2"/>
+    <joint name="joint_3"/>
+  </group>
+
+  <!-- The crate is not planned by MoveIt: demo_path.py drives it directly and
+       slowly. It is a group so it can have a named state. -->
+  <group name="crate">
+    <joint name="z_crate"/>
+  </group>
+
+  <group_state name="home" group="arm">
+    <joint name="z_carriage" value="0"/>
+    <joint name="joint_1" value="0"/>
+    <joint name="joint_2" value="0"/>
+    <joint name="joint_3" value="0"/>
+  </group_state>
+  <group_state name="home" group="crate">
+    <joint name="z_crate" value="0"/>
+  </group_state>
+
+  <!-- Adjacent links always touch. -->
+  <disable_collisions link1="gantry" link2="crate" reason="Adjacent"/>
+  <disable_collisions link1="gantry" link2="carriage" reason="Adjacent"/>
+  <disable_collisions link1="carriage" link2="mid_link" reason="Adjacent"/>
+  <disable_collisions link1="mid_link" link2="endeffector_link" reason="Adjacent"/>
+  <disable_collisions link1="endeffector_link" link2="endeffector" reason="Adjacent"/>
+
+  <!-- mid_link pivots 0.2 m in front of the column; its box cannot reach it. -->
+  <disable_collisions link1="gantry" link2="mid_link" reason="Never"/>
+
+  <!-- Deliberately NOT disabled: crate / carriage. Both ride the same rail, so
+       their boxes collide exactly when the crate would pass the carriage.
+       The arm links against the crate, gantry and carriage stay enabled too:
+       the end effector will change and may reach down or fold back. -->
+
+</robot>

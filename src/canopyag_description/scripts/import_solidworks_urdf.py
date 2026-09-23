@@ -33,7 +33,7 @@ except ImportError:
 # that comes back out as a comment above the entry - use it to record why a
 # value was overridden, because YAML comments themselves are not preserved.
 PRESERVE = {
-    "link": ("note", "material", "visual_xyz", "visual_rpy"),
+    "link": ("note", "material", "visual_xyz", "visual_rpy", "collision_box"),
     "joint": ("note", "limit", "dynamics"),
 }
 
@@ -286,6 +286,9 @@ def emit(name, root, mount, meshes, materials, links, joints, counterweights, no
             out.append(f"    material: {L.get('material', 'default')}")
             out.append(f"    visual_xyz: {vec(L['visual_xyz'])}")
             out.append(f"    visual_rpy: {vec(L['visual_rpy'])}")
+        if "collision_box" in L:
+            B = L["collision_box"]
+            out.append(f"    collision_box: {{size: {vec(B['size'])}, xyz: {vec(B['xyz'])}}}")
         if "mass" in L:
             out.append(f"    mass: {num(L['mass'])}")
             out.append(f"    com_xyz: {vec(L['com_xyz'])}")
