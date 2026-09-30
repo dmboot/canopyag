@@ -15,6 +15,9 @@
   <xacro:arg name="mock"          default="false"/>
   <xacro:arg name="can_interface" default="can0"/>
   <xacro:arg name="can_bitrate"   default="500000"/>
+  <!-- Joint <-> motor mapping, only read on the real robot. -->
+  <xacro:arg name="hardware_file"
+             default="$(find canopyag_description)/config/hardware.yaml"/>
   <xacro:arg name="params_file"
              default="$(find canopyag_description)/config/robot_parameters.yaml"/>
   <xacro:arg name="controllers_file"
@@ -31,7 +34,8 @@
 
   <xacro:build_ros2_control cfg="${cfg}" sim="${sim}" mock="$(arg mock)"
                             can_interface="$(arg can_interface)"
-                            can_bitrate="$(arg can_bitrate)"/>
+                            can_bitrate="$(arg can_bitrate)"
+                            hardware_file="$(arg hardware_file)"/>
 
   <xacro:if value="${sim}">
     <xacro:build_gazebo controllers_file="$(arg controllers_file)"/>

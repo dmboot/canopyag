@@ -1,0 +1,33 @@
+# hardware.yaml for test_vcan_launch.py: the two axes that exist today on
+# mks_sim.py drivers 1 and 3, the rest virtual. Faster than the real
+# bring-up values so the test does not wait on slow ramps. Keep it independent
+# of config/hardware.yaml, which changes as motors are added.
+hardware:
+  can_rate_hz: 100
+  reply_timeout_ms: 50
+  max_missed_replies: 5
+  startup_check_retries: 3
+
+joints:
+  z_carriage:
+    mode: can
+    can_id: 1
+    motor_revs_per_unit: 125.0
+    reversed: false
+    max_motor_rpm: 1500
+    acceleration: 250
+    initial_position: 0.0
+  joint_1:
+    mode: can
+    can_id: 3
+    motor_revs_per_unit: 2.5464790894703255
+    reversed: true
+    max_motor_rpm: 1500
+    acceleration: 250
+    initial_position: 0.0
+  z_crate:
+    mode: virtual
+  joint_2:
+    mode: virtual
+  joint_3:
+    mode: virtual

@@ -8,13 +8,29 @@
   mock:=true uses ros2_control's mock_components/GenericSystem: every command
   is reflected straight back as state. No physics, no hardware - what the
   MoveIt demo runs on until the real axes exist.
+
+  Neither: canopyag_hardware/CanopyagSystem on SocketCAN. Only then is
+  config/hardware.yaml loaded, and its values become <param> tags on the
+  <hardware> and on each <joint>. Sim and mock output does not depend on it.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <xacro:macro name="axis_each" params="names cfg">
+  <!-- One <param name="key">value</param> per entry of the dict `d`. -->
+  <xacro:macro name="param_each" params="keys d">
+    <xacro:if value="${len(keys) > 0}">
+      <param name="${keys[0]}">${d[keys[0]]}</param>
+      <xacro:param_each keys="${keys[1:]}" d="${d}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- hw: the joints: table of hardware.yaml, or empty for sim / mock. -->
+  <xacro:macro name="axis_each" params="names cfg hw">
     <xacro:if value="${len(names) > 0}">
       <xacro:property name="J" value="${cfg['joints'][names[0]]}"/>
       <joint name="${names[0]}">
+        <xacro:if value="${names[0] in hw}">
+          <xacro:param_each keys="${list(hw[names[0]].keys())}" d="${hw[names[0]]}"/>
+        </xacro:if>
         <command_interface name="position">
           <xacro:if value="${'lower' in J['limit']}">
             <param name="min">${J['limit']['lower']}</param>
@@ -24,11 +40,14 @@
         <state_interface name="position"/>
         <state_interface name="velocity"/>
       </joint>
-      <xacro:axis_each names="${names[1:]}" cfg="${cfg}"/>
+      <xacro:axis_each names="${names[1:]}" cfg="${cfg}" hw="${hw}"/>
     </xacro:if>
   </xacro:macro>
 
-  <xacro:macro name="build_ros2_control" params="cfg sim mock can_interface can_bitrate">
+  <xacro:macro name="build_ros2_control" params="cfg sim mock can_interface can_bitrate hardware_file">
+    <xacro:property name="real" value="${not (sim or mock)}"/>
+    <xacro:property name="hw_cfg"
+                    value="${xacro.load_yaml(hardware_file) if real else dict(hardware=dict(), joints=dict())}"/>
     <ros2_control name="${cfg['robot']['name']}" type="system">
       <hardware>
         <xacro:if value="${sim}">
@@ -38,14 +57,15 @@
           <plugin>mock_components/GenericSystem</plugin>
         </xacro:if>
         <xacro:unless value="${sim or mock}">
-          <!-- Implemented in canopyag_hardware, which does not exist yet. -->
+          <!-- src/canopyag_hardware; joint mapping in config/hardware.yaml -->
           <plugin>canopyag_hardware/CanopyagSystem</plugin>
           <param name="can_interface">${can_interface}</param>
           <param name="can_bitrate">${can_bitrate}</param>
+          <xacro:param_each keys="${list(hw_cfg['hardware'].keys())}" d="${hw_cfg['hardware']}"/>
         </xacro:unless>
       </hardware>
 
-      <xacro:axis_each cfg="${cfg}"
+      <xacro:axis_each cfg="${cfg}" hw="${hw_cfg['joints']}"
         names="${[n for n, J in cfg['joints'].items() if J['type'] != 'fixed']}"/>
     </ros2_control>
   </xacro:macro>

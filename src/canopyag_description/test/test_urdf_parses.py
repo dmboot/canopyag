@@ -82,3 +82,38 @@ def test_counterweights_sit_on_prismatic_joints(cfg):
     for joint, cw in (cfg.get("counterweights") or {}).items():
         assert cfg["joints"].get(joint, {}).get("type") == "prismatic", joint
         assert float(cw["mass"]) >= 0.0, joint
+
+
+# --- config/hardware.yaml: only the real plugin may see it -----------------
+
+HARDWARE = PKG / "config" / "hardware.yaml"
+
+
+@pytest.mark.parametrize("args", [{"sim": "true"}, {"sim": "false", "mock": "true"}])
+def test_sim_and_mock_do_not_read_hardware_yaml(args):
+    # A missing hardware_file must not matter: sim and mock output stays the
+    # same byte for byte, whatever hardware.yaml says.
+    assert expand(**args, hardware_file="/nonexistent.yaml") == expand(**args)
+
+
+def test_hardware_yaml_covers_every_ros2_control_joint(cfg):
+    hw = yaml.safe_load(HARDWARE.read_text())
+    movable = {n for n, j in cfg["joints"].items() if j["type"] != "fixed"}
+    assert set(hw["joints"]) == movable
+    can_ids = [j["can_id"] for j in hw["joints"].values() if j["mode"] == "can"]
+    assert len(can_ids) == len(set(can_ids)), "duplicate can_id in hardware.yaml"
+    for name, j in hw["joints"].items():
+        assert j["mode"] in ("can", "virtual"), name
+        if j["mode"] == "can":
+            assert 0 < j["motor_revs_per_unit"], name
+            assert 1 <= j["max_motor_rpm"] <= 3000, name
+            assert 0 <= j["acceleration"] <= 255, name
+
+
+def test_real_plugin_gets_hardware_params():
+    root = ET.fromstring(expand(sim="false", hardware_file=str(HARDWARE)))
+    rc = root.find("ros2_control")
+    assert rc.find("hardware/plugin").text == "canopyag_hardware/CanopyagSystem"
+    for joint in rc.findall("joint"):
+        params = {p.get("name") for p in joint.findall("param")}
+        assert "mode" in params, joint.get("name")

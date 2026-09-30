@@ -1,0 +1,7 @@
+<library path="canopyag_hardware">
+  <class name="canopyag_hardware/CanopyagSystem"
+         type="canopyag_hardware::CanopyagSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>MKS SERVO57D drivers on SocketCAN; streams absolute position (0xF5) per joint.</description>
+  </class>
+</library>

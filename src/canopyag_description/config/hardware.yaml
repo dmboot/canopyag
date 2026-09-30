@@ -1,0 +1,88 @@
+# ===========================================================================
+# canopyag - joint <-> motor mapping for the real robot (canopyag_hardware)
+# ===========================================================================
+# The ONE file to edit when motors, gearing or CAN IDs change. It is only read
+# when the xacro selects the real plugin (sim:=false mock:=false); Gazebo and
+# mock hardware never see it. It is NOT touched by import_solidworks_urdf.py.
+#
+# Every value you are expected to change is marked  # <-- EDIT
+#
+# Per joint:
+#   mode                can     = a real MKS SERVO57D on the CAN bus
+#                       virtual = no motor yet: the plugin copies command to
+#                                 state (like mock hardware), no CAN traffic.
+#                                 Only `mode` and `initial_position` are read.
+#   can_id              the driver's CanID menu setting (1..2047, unique)
+#   motor_revs_per_unit motor revolutions per rad (revolute / continuous) or
+#                       per metre (prismatic):
+#                         gearbox G on a revolute joint  -> G / (2 pi)
+#                         lead screw / belt, L metres of travel per motor
+#                         rev (after any gearbox)        -> 1 / L
+#   reversed            true if a positive joint command turns the motor the
+#                       wrong way
+#   max_motor_rpm       safety cap on the speed sent in every F5 (<= 3000).
+#                       A trajectory faster than this lags, and the trajectory
+#                       controller aborts on its path tolerance. Keep it low for
+#                       bring-up; raise it once direction and scaling are checked.
+#   acceleration        MKS ramp 0..255 (0 = instant; the driver adds 1 RPM
+#                       every (256 - acc) * 50 us)
+#   initial_position    joint position at power-on, in joint units. The robot
+#                       MUST be physically there when the plugin activates;
+#                       0.0 = URDF home.
+# ===========================================================================
+
+hardware:
+  can_rate_hz: 100              # <-- EDIT: CAN cycle rate (bus budget: see README)
+  reply_timeout_ms: 50          # <-- EDIT: startup wait for one reply
+  max_missed_replies: 5         # <-- EDIT: fault after reply_timeout_ms * this without a 0x31 reply
+  startup_check_retries: 3      # <-- EDIT: 0x31 attempts per motor before configure fails
+
+joints:
+  z_carriage:
+    mode: can                   # <-- EDIT
+    can_id: 1                   # <-- EDIT
+    # 5:1 gearbox -> GT2 belt (2 mm pitch, 6 mm wide) on a 20-tooth pulley:
+    #   L = 20 * 0.002 m / 5 = 0.008 m per motor rev -> 1 / L = 125
+    # (other pulleys: 16T -> 156.25, 30T -> 83.333)
+    motor_revs_per_unit: 125.0  # <-- EDIT
+    reversed: false             # <-- EDIT (check on the first move)
+    max_motor_rpm: 600          # <-- EDIT: 600 rpm = 0.08 m/s at 125 rev/m
+    acceleration: 200           # <-- EDIT
+    initial_position: 0.0       # <-- EDIT
+
+  joint_1:
+    mode: can                   # <-- EDIT
+    can_id: 3                   # <-- EDIT
+    # 16:1 gearbox: 16 / (2 pi)
+    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT
+    reversed: false             # <-- EDIT (check on the first move)
+    max_motor_rpm: 300          # <-- EDIT: 300 rpm = 1.96 rad/s at the link
+    acceleration: 230           # <-- EDIT
+    initial_position: 0.0       # <-- EDIT
+
+  z_crate:
+    mode: virtual               # <-- EDIT: no mechanics yet
+    can_id: 2                   # <-- EDIT
+    motor_revs_per_unit: 125.0  # <-- EDIT: TODO transmission unknown
+    reversed: false             # <-- EDIT
+    max_motor_rpm: 300          # <-- EDIT
+    acceleration: 200           # <-- EDIT
+    initial_position: 0.0       # <-- EDIT
+
+  joint_2:
+    mode: virtual               # <-- EDIT: no hardware yet
+    can_id: 4                   # <-- EDIT: TODO confirm
+    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT: TODO transmission unknown
+    reversed: false             # <-- EDIT
+    max_motor_rpm: 300          # <-- EDIT
+    acceleration: 230           # <-- EDIT
+    initial_position: 0.0       # <-- EDIT
+
+  joint_3:
+    mode: virtual               # <-- EDIT: no hardware yet
+    can_id: 5                   # <-- EDIT: TODO confirm
+    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT: TODO transmission unknown
+    reversed: false             # <-- EDIT
+    max_motor_rpm: 300          # <-- EDIT
+    acceleration: 230           # <-- EDIT
+    initial_position: 0.0       # <-- EDIT
