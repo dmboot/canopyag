@@ -3,8 +3,8 @@
 
     ros2 launch canopyag_moveit_config demo.launch.py [loop:=true]
 
-The arm (carriage + three revolutes) goes through WAYPOINTS as point-to-point
-moves: a straight line in joint space, all four joints starting and stopping
+The arm (carriage + two revolutes) goes through WAYPOINTS as point-to-point
+moves: a straight line in joint space, all three joints starting and stopping
 together, each within its own limit from config/joint_limits.yaml. MoveIt
 checks every sample for collisions (the boxes in robot_parameters.yaml,
 including the crate) and executes it through arm_controller.
@@ -45,7 +45,7 @@ from moveit_msgs.srv import GetStateValidity
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-ARM_JOINTS = ["z_carriage", "joint_1", "joint_2", "joint_3"]
+ARM_JOINTS = ["z_carriage", "joint_1", "joint_2"]
 
 GAP = 0.02               # m, crate top to carriage bottom, never less
 CRATE_TRAIL = 0.15       # m, how far below the carriage the crate follows
@@ -57,20 +57,20 @@ CHECKS_IN_FLIGHT = 8     # concurrent /check_state_validity calls
 
 # At home the crate and the carriage touch (gap 0), so the path starts and
 # ends at REST, with the carriage lifted clear.
-REST = (0.05, 0.0, 0.0, 0.0)
+REST = (0.05, 0.0, 0.0)
 
-# (name, [z_carriage, joint_1, joint_2, joint_3], velocity scaling)
+# (name, [z_carriage, joint_1, joint_2], velocity scaling)
 # The z values are where the carriage is, so the crate follows the climb.
 WAYPOINTS = [("rest", REST, 0.5)]
 for i, z in enumerate((0.35, 0.65, 0.95)):
     WAYPOINTS += [
-        (f"level{i}_reach_left",  (z, 0.8, -1.1, 0.6), 0.6),
-        (f"level{i}_pick_left",   (z + 0.05, 0.6, -0.6, 1.4), 0.3),
-        (f"level{i}_reach_right", (z + 0.05, -0.8, 1.1, -0.6), 0.6),
-        (f"level{i}_pick_right",  (z + 0.10, -0.6, 0.6, -1.4), 0.3),
-        (f"level{i}_stow",        (z + 0.10, 0.0, 0.0, 0.0), 0.6),
+        (f"level{i}_reach_left",  (z, 0.8, -1.1), 0.6),
+        (f"level{i}_pick_left",   (z + 0.05, 0.6, -0.6), 0.3),
+        (f"level{i}_reach_right", (z + 0.05, -0.8, 1.1), 0.6),
+        (f"level{i}_pick_right",  (z + 0.10, -0.6, 0.6), 0.3),
+        (f"level{i}_stow",        (z + 0.10, 0.0, 0.0), 0.6),
     ]
-WAYPOINTS += [("back_down", (0.30, 0.0, 0.0, 0.0), 0.8), ("rest", REST, 0.5)]
+WAYPOINTS += [("back_down", (0.30, 0.0, 0.0), 0.8), ("rest", REST, 0.5)]
 
 
 class Shutdown(Exception):

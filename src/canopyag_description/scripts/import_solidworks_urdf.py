@@ -379,6 +379,15 @@ def main():
                     entry[k] = prev[k]
                     kept.append(f"{kind} {n}.{k}")
 
+    # An empty limit in the export makes a joint continuous (see above), but a
+    # hand-tuned lower/upper that survived the import says it is limited.
+    for n, J in joints.items():
+        lim = J.get("limit", {})
+        if J["type"] == "continuous" and lim.get("lower", 0.0) < lim.get("upper", 0.0):
+            J["type"] = "revolute"
+            notes.append(f"{n}: export has no limits, kept revolute because of the "
+                         f"preserved limit {lim['lower']} .. {lim['upper']}")
+
     # usable effort/velocity
     for n, J in joints.items():
         if "limit" not in J:

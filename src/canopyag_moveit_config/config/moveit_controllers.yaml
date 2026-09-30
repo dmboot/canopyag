@@ -15,7 +15,6 @@ moveit_simple_controller_manager:
       - z_carriage
       - joint_1
       - joint_2
-      - joint_3
 
   crate_controller:
     type: FollowJointTrajectory

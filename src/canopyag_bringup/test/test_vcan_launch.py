@@ -34,8 +34,8 @@ from std_msgs.msg import Float64MultiArray
 
 IFACE = "vcan0"
 HERE = Path(__file__).resolve().parent
-FORWARD_JOINTS = ["z_carriage", "joint_1", "joint_2", "joint_3"]
-TARGET = [0.05, 0.4, 0.3, -0.3]     # z_carriage m, joint_1..3 rad
+FORWARD_JOINTS = ["z_carriage", "joint_1", "joint_2"]
+TARGET = [0.05, 0.4, 0.3]     # z_carriage m, joint_1..2 rad
 MOTOR_IDS = (1, 3)
 
 # case -> (mks_sim.py flags, expected outcome, text the FAULT/FATAL log must contain)

@@ -29,5 +29,3 @@ joints:
     mode: virtual
   joint_2:
     mode: virtual
-  joint_3:
-    mode: virtual

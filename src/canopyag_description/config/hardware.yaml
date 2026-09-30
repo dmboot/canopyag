@@ -77,12 +77,3 @@ joints:
     max_motor_rpm: 300          # <-- EDIT
     acceleration: 230           # <-- EDIT
     initial_position: 0.0       # <-- EDIT
-
-  joint_3:
-    mode: virtual               # <-- EDIT: no hardware yet
-    can_id: 5                   # <-- EDIT: TODO confirm
-    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT: TODO transmission unknown
-    reversed: false             # <-- EDIT
-    max_motor_rpm: 300          # <-- EDIT
-    acceleration: 230           # <-- EDIT
-    initial_position: 0.0       # <-- EDIT

@@ -27,7 +27,7 @@ class GhostState(Node):
         super().__init__("ghost_state")
         # Must match forward_position_controller.joints in controllers.yaml.
         self.forward_joints = self.declare_parameter(
-            "forward_joints", ["z_carriage", "joint_1", "joint_2", "joint_3"]).value
+            "forward_joints", ["z_carriage", "joint_1", "joint_2"]).value
         self.commanded = {}
         self.pub = self.create_publisher(JointState, "/ghost/joint_states", 10)
         for ctrl in ("arm_controller", "crate_controller"):

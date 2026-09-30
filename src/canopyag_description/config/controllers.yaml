@@ -40,7 +40,6 @@ arm_controller:
       - z_carriage
       - joint_1
       - joint_2
-      - joint_3
     command_interfaces: [position]
     state_interfaces: [position, velocity]
     allow_nonzero_velocity_at_trajectory_end: false
@@ -50,8 +49,6 @@ arm_controller:
       z_carriage: { trajectory: 0.02, goal: 0.005 }
       joint_1:    { trajectory: 0.10, goal: 0.01 }
       joint_2:    { trajectory: 0.10, goal: 0.01 }
-      joint_3:    { trajectory: 0.10, goal: 0.01 }
-
 
 # The crate rides the same gantry but is not part of the arm's kinematic
 # chain, so it gets its own controller and can be moved independently.
@@ -68,5 +65,4 @@ forward_position_controller:
       - z_carriage
       - joint_1
       - joint_2
-      - joint_3
     interface_name: position

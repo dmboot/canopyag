@@ -100,11 +100,11 @@ links:
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.4, 0.09, 0.095], xyz: [0.188, 0.0, 0.0475]}
-    mass: 0.721634261
-    com_xyz: [0.188522371, 1.7437e-05, 0.041385882]
+    collision_box: {size: [0.427, 0.074, 0.096], xyz: [0.2015, 0.0, 0.047]}
+    mass: 0.745091632
+    com_xyz: [0.208944241, 1.7278e-05, 0.040826552]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000607208842, ixy: -9.4873e-07, ixz: -5.7209426e-05, iyy: 0.008638764337, iyz: -1.6325e-08, izz: 0.009128462002}
+    inertia: {ixx: 0.000425254023, ixy: -2.92076e-07, ixz: -1.5787709e-05, iyy: 0.002469848653, iyz: -3.1532e-08, izz: 0.002784012983}
   endeffector_link:
     mesh: endeffector_link.stl
     material: structure
@@ -112,22 +112,9 @@ links:
     visual_rpy: [0.0, 0.0, 0.0]
     collision_box: {size: [0.2995, 0.068, 0.06], xyz: [0.1387, 0.0, -0.03]}
     mass: 0.25643225
-    com_xyz: [0.134032575, 2.51e-06, -0.027018373]
+    com_xyz: [0.134032575, 2.51e-06, -0.027018873]
     com_rpy: [0.0, 0.0, 0.0]
     inertia: {ixx: 7.0635337e-05, ixy: 6.9226e-08, ixz: 2.0818838e-05, iyy: 0.001591408915, iyz: -4.942e-09, izz: 0.001640234528}
-  endeffector:
-    note: |-
-      Collision box is the current mesh bounding box. The end effector
-      design will change - update collision_box with it.
-    mesh: endeffector.stl
-    material: structure
-    visual_xyz: [0.0, 0.0, 0.0]
-    visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.2281, 0.1542, 0.049], xyz: [0.103, 0.0, -0.0249]}
-    mass: 0.243451131
-    com_xyz: [0.085482593, -0.000105411, -0.020592094]
-    com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 8.0998509e-05, ixy: 2.66453e-07, ixz: -2.608117e-06, iyy: 9.8850236e-05, iyz: 9.66597e-07, izz: 0.000136737206}
 
 joints:
   z_crate:
@@ -161,17 +148,12 @@ joints:
     type: continuous
     parent: mid_link
     child: endeffector_link
-    xyz: [0.343, 0.0, 0.0]
+    xyz: [0.37, 0.0, -0.0007495]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 1.5}
     dynamics: {damping: 0.0, friction: 0.0}
-  joint_3:
-    type: continuous
-    parent: endeffector_link
-    child: endeffector
-    xyz: [0.25484, 0.0, -0.035796]
-    rpy: [0.0, 0.0, 0.0]
-    axis: [0.0, 0.0, -1.0]
-    limit: {effort: 50.0, velocity: 1.5}
-    dynamics: {damping: 0.0, friction: 0.0}
+
+# Importer notes from the last run:
+#   joint_1: export has no limits, kept revolute because of the preserved limit -1.65 .. 1.65
+#   meshes/visual/endeffector.stl is no longer referenced

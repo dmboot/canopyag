@@ -1,4 +1,4 @@
-# 4 DOF (lift + three vertical revolutes): position plus yaw, never a full
+# 3 DOF (lift + two vertical revolutes): position plus yaw, never a full
 # 6D pose, so solve for position only. Only used for dragging the
 # interactive marker in RViz; the demo plans in joint space.
 arm:
