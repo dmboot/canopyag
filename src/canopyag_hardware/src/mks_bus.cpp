@@ -109,6 +109,26 @@ std::optional<MksBus::Reply> MksBus::wait(uint32_t id, uint8_t cmd, int timeout_
   }
 }
 
+std::size_t MksBus::count(uint32_t id, uint8_t cmd) const
+{
+  auto it = buffer_.find({id, cmd});
+  return it == buffer_.end() ? 0 : it->second.size();
+}
+
+bool MksBus::await_reply(uint32_t id, uint8_t cmd, std::size_t want, int timeout_ms)
+{
+  const auto deadline = Clock::now() + std::chrono::milliseconds(timeout_ms);
+  while (true) {
+    if (count(id, cmd) >= want) {
+      return true;
+    }
+    if (Clock::now() >= deadline || !sock_.is_open()) {
+      return false;
+    }
+    pump_until(std::min(deadline, Clock::now() + std::chrono::milliseconds(1)));
+  }
+}
+
 std::optional<MksBus::Reply> MksBus::request(const mks::Frame & f, int timeout_ms)
 {
   discard(f.id, f.cmd());

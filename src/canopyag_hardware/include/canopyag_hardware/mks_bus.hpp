@@ -68,6 +68,11 @@ public:
 
   // Waits (pumping the socket) until a reply for (id, cmd) is buffered.
   std::optional<Reply> wait(uint32_t id, uint8_t cmd, int timeout_ms);
+  // Waits until at least `count` replies for (id, cmd) are buffered, and
+  // leaves them there. Pass count(id, cmd) + 1 from before the request to
+  // wait for ITS reply. True if it arrived in time.
+  bool await_reply(uint32_t id, uint8_t cmd, std::size_t count, int timeout_ms);
+  std::size_t count(uint32_t id, uint8_t cmd) const;
 
   // discard + send + wait.
   std::optional<Reply> request(const mks::Frame & f, int timeout_ms);

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Hard-coded demo path: the arm works its way up the gantry, the crate follows.
 
-    ros2 launch canopyag_moveit_config demo.launch.py [loop:=true]
+    ros2 launch canopyag_moveit_config demo.launch.py [loop:=true] [speed:=0.5]
+    ros2 launch canopyag_moveit_config moveit.launch.py demo:=true speed:=0.3   # real robot
+
+`speed` (0..1] scales every move: the arm's velocity scaling per waypoint and
+the crate's follow speeds.
 
 The arm (carriage + two revolutes) goes through WAYPOINTS as point-to-point
 moves: a straight line in joint space, all three joints starting and stopping
@@ -39,6 +43,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from control_msgs.action import FollowJointTrajectory
+from controller_manager_msgs.srv import ListControllers
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.msg import MoveItErrorCodes, RobotState
 from moveit_msgs.srv import GetStateValidity
@@ -82,6 +87,9 @@ class DemoPath(Node):
     def __init__(self):
         super().__init__("demo_path")
         self.declare_parameter("loop", False)
+        self.speed = float(self.declare_parameter("speed", 1.0).value)
+        if not 0.0 < self.speed <= 1.0:
+            raise ValueError(f"speed must be in (0, 1], got {self.speed}")
 
         self.execute = ActionClient(self, ExecuteTrajectory, "execute_trajectory")
         self.validity = self.create_client(GetStateValidity, "check_state_validity")
@@ -95,6 +103,8 @@ class DemoPath(Node):
         # outright if it is not up yet.
         self.arm = ActionClient(self, FollowJointTrajectory,
                                 "arm_controller/follow_joint_trajectory")
+        self.list_controllers = self.create_client(
+            ListControllers, "controller_manager/list_controllers")
 
         self.pos = {}
         self.car_goal = None       # where the carriage is being sent
@@ -138,7 +148,7 @@ class DemoPath(Node):
         if self.crate_sent is not None and abs(target - self.crate_sent) < 0.002:
             return
         now = self.pos["z_crate"]
-        speed = CRATE_UP_SPEED if target > now else CRATE_DOWN_SPEED
+        speed = (CRATE_UP_SPEED if target > now else CRATE_DOWN_SPEED) * self.speed
         seconds = max(abs(target - now) / speed, 0.2)
 
         point = JointTrajectoryPoint(positions=[target])
@@ -165,7 +175,7 @@ class DemoPath(Node):
                 return False
             time.sleep(0.05)
 
-        traj = self.ptp(pose, scale)
+        traj = self.ptp(pose, scale * self.speed)
         blocked = self.first_collision(traj)
         if blocked is not None:
             self.get_logger().error(f"{name}: in collision at t={blocked:.2f} s - stopping")
@@ -246,12 +256,7 @@ class DemoPath(Node):
                 done_pt, future = pending.pop(0)
                 if not self.check(done_pt, future):
                     return self.duration_of(done_pt)
-            req = GetStateValidity.Request()
-            req.group_name = "arm"
-            req.robot_state = RobotState()
-            req.robot_state.joint_state.name = list(ARM_JOINTS) + ["z_crate"]
-            req.robot_state.joint_state.position = list(pt.positions) + [crate]
-            pending.append((pt, self.validity.call_async(req)))
+            pending.append((pt, self.validity.call_async(self.validity_request(pt.positions, crate))))
         for pt, future in pending:
             if not self.check(pt, future):
                 return self.duration_of(pt)
@@ -276,20 +281,67 @@ class DemoPath(Node):
         return future.result()
 
     def check(self, pt, future):
-        try:
-            return self.wait(future, timeout=2.0).valid
-        except TimeoutError:
-            self.get_logger().error("check_state_validity did not answer")
+        # A lost reply is not a collision: ask again (DDS can drop a service
+        # reply, most often right after the client connects).
+        for attempt in range(3):
+            try:
+                return self.wait(future, timeout=2.0).valid
+            except TimeoutError:
+                self.get_logger().warn("check_state_validity did not answer, asking again")
+                future = self.validity.call_async(self.validity_request(pt.positions))
+        self.get_logger().error("check_state_validity did not answer")
+        return False
+
+    def validity_request(self, arm_positions, crate=None):
+        req = GetStateValidity.Request()
+        req.group_name = "arm"
+        req.robot_state = RobotState()
+        req.robot_state.joint_state.name = list(ARM_JOINTS) + ["z_crate"]
+        crate = max(self.pos["z_crate"], self.crate_sent or 0.0) if crate is None else crate
+        req.robot_state.joint_state.position = list(arm_positions) + [crate]
+        return req
+
+    def validity_answers(self):
+        """True once check_state_validity has answered one request. On Humble a
+        service can look ready (wait_for_service) before its replies reach us."""
+        if "z_carriage" not in self.pos or "z_crate" not in self.pos:
             return False
+        try:
+            self.wait(self.validity.call_async(
+                self.validity_request([self.pos[j] for j in ARM_JOINTS])), timeout=1.0)
+            return True
+        except TimeoutError:
+            return False
+
+    def controllers_active(self):
+        """True once arm_controller and crate_controller are both active. On
+        the real robot arm_controller starts inactive, on purpose."""
+        if not self.list_controllers.service_is_ready():
+            return False
+        try:
+            res = self.wait(self.list_controllers.call_async(ListControllers.Request()), 2.0)
+        except TimeoutError:
+            return False
+        state = {c.name: c.state for c in res.controller}
+        missing = [n for n in ("arm_controller", "crate_controller") if state.get(n) != "active"]
+        if missing:
+            self.get_logger().warn(
+                f"waiting for {', '.join(missing)} to be active - with the robot at home: "
+                f"ros2 control switch_controllers --activate {' '.join(missing)}",
+                throttle_duration_sec=10.0)
+        return not missing
 
     # ------------------------------------------------------------------ run
 
     def run(self):
-        self.get_logger().info("waiting for move_group and the controllers ...")
+        self.get_logger().info(
+            f"waiting for move_group and the controllers ... (speed {self.speed:g})")
         for ready in (lambda: self.execute.wait_for_server(timeout_sec=0.5),
                       lambda: self.validity.wait_for_service(timeout_sec=0.5),
                       lambda: self.arm.wait_for_server(timeout_sec=0.5),
                       lambda: self.crate.wait_for_server(timeout_sec=0.5),
+                      self.controllers_active,
+                      self.validity_answers,
                       lambda: "z_carriage" in self.pos and "z_crate" in self.pos):
             while not ready():
                 if not rclpy.ok():
@@ -318,6 +370,7 @@ def main():
     except (KeyboardInterrupt, Shutdown):
         pass
     finally:
+        executor.shutdown(timeout_sec=1.0)
         rclpy.try_shutdown()
 
 

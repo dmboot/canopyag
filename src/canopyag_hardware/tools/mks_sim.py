@@ -23,11 +23,18 @@ Fault injection (times are counted from that driver's first enable, F3 1):
   --duplicate-id ID  two drivers answer on ID (positions differ by a few counts)
   --no-done          F4/F5 never send status 2
   --latency MS       every reply is delayed by MS milliseconds
-  --retarget MODE    what a new F5 does while a move is running - the open
-                     hardware question (README, "F5 on the real drivers"):
-                       smooth  switch to the new target on the fly (default)
+  --retarget MODE    what a new F5 does while a move is running:
+                       smooth  switch to the new target on the fly (default;
+                               what the real drivers do)
                        ignore  reply 1 but keep going to the old target
                        reject  reply status 0
+
+Diagnostics:
+  OVERLAP lines      a request arrived while another driver still had a reply
+                     to send. On the real bus two drivers then answer at once,
+                     which these drivers turn into bit errors (error-warning,
+                     error-passive). The plugin must never cause one.
+  --trace FILE       CSV of every driver's motion every 2 ms: t, id, counts, rpm
 """
 
 import argparse
@@ -108,7 +115,7 @@ class Driver:
             if (self.target - nxt) * err <= 0 or abs(err) < 0.5:   # arrived / crossed
                 self.pos, self.vel, self.mode = self.target, 0.0, "idle"
                 if self.move_cmd is not None and not self.args.no_done:
-                    self.reply(out, now, [self.move_cmd, 2])
+                    self.reply(out, now, [self.move_cmd, 2], answer=False)
                 self.move_cmd = None
             else:
                 self.pos = nxt
@@ -119,11 +126,13 @@ class Driver:
                 self.mode = "idle"
 
     # ---- protocol ----
-    def reply(self, out, now, body):
+    def reply(self, out, now, body, answer=True):
+        """answer=False: a spontaneous frame (F5 "done"), not a reply to a request."""
         if self.silent:
             return
         body = bytes(body)
-        out.push(now + self.args.latency / 1000.0, self.id, body + bytes([crc(self.id, body)]))
+        out.push(now + self.args.latency / 1000.0, self.id, body + bytes([crc(self.id, body)]),
+                 answer)
 
     def handle(self, data, now, out):
         cmd, p = data[0], data[1:-1]
@@ -190,13 +199,17 @@ class Outbox:
     def __init__(self):
         self.q, self.n = [], 0
 
-    def push(self, when, can_id, data):
+    def push(self, when, can_id, data, answer=True):
         self.n += 1
-        heapq.heappush(self.q, (when, self.n, can_id, data))
+        heapq.heappush(self.q, (when, self.n, can_id, data, answer))
+
+    def answering(self):
+        """CAN IDs that still owe a reply to a request."""
+        return {e[2] for e in self.q if e[4]}
 
     def flush(self, sock, now):
         while self.q and self.q[0][0] <= now:
-            _, _, can_id, data = heapq.heappop(self.q)
+            _, _, can_id, data, _ = heapq.heappop(self.q)
             try:
                 sock.send(FRAME.pack(can_id, len(data), data.ljust(8, b"\x00")))
             except OSError as e:          # vcan never fills, but be safe
@@ -204,7 +217,7 @@ class Outbox:
 
 
 def log(msg):
-    print(f"[mks_sim {time.monotonic():.3f}] {msg}", flush=True)
+    print(f"[mks_sim {time.time():.3f}] {msg}", flush=True)
 
 
 def main():
@@ -222,6 +235,7 @@ def main():
     ap.add_argument("--latency", type=float, default=0.0, help="ms")
     ap.add_argument("--retarget", choices=["smooth", "ignore", "reject"], default="smooth")
     ap.add_argument("-v", "--verbose", action="store_true", help="print every frame")
+    ap.add_argument("--trace", help="CSV of the simulated motion (t, id, counts, rpm)")
     args = ap.parse_args()
 
     sock = socket.socket(socket.PF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
@@ -245,6 +259,10 @@ def main():
 
     out = Outbox()
     last = time.monotonic()
+    overlaps, next_trace = 0, 0.0
+    trace = open(args.trace, "w") if args.trace else None
+    if trace:
+        trace.write("t,id,counts,rpm\n")
     try:
         while True:
             select.select([sock], [], [], 0.001)
@@ -262,6 +280,11 @@ def main():
                     log(f"RX {can_id:03X}#{data.hex(' ')}")
                 if dlc < 2 or crc(can_id, data[:-1]) != data[-1]:
                     continue
+                if can_id in drivers and out.answering() - {can_id}:
+                    overlaps += 1
+                    if overlaps <= 5 or overlaps % 100 == 0:
+                        log(f"OVERLAP #{overlaps}: request to id {can_id} while "
+                            f"{sorted(out.answering() - {can_id})} still had to answer")
                 for d in drivers.get(can_id, []):
                     d.handle(data, now, out)
             dt, last = now - last, now
@@ -269,8 +292,16 @@ def main():
                 for d in ds:
                     d.step(dt, now, out)
             out.flush(sock, now)
+            if trace and now >= next_trace:
+                next_trace = now + 0.002
+                for ds in drivers.values():
+                    d = ds[0]
+                    trace.write(f"{now:.4f},{d.id},{d.pos:.1f},{d.vel * 60 / COUNTS_PER_REV:.2f}\n")
     except KeyboardInterrupt:
         pass
+    finally:
+        if trace:
+            trace.close()
 
 
 if __name__ == "__main__":

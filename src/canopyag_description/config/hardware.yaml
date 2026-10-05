@@ -39,7 +39,7 @@ hardware:
 
 joints:
   z_carriage:
-    mode: can                   # <-- EDIT
+    mode: virtual                   # <-- EDIT
     can_id: 1                   # <-- EDIT
     # 5:1 gearbox -> GT2 belt (2 mm pitch, 6 mm wide) on a 20-tooth pulley:
     #   L = 20 * 0.002 m / 5 = 0.008 m per motor rev -> 1 / L = 125
@@ -56,7 +56,7 @@ joints:
     # 16:1 gearbox: 16 / (2 pi)
     motor_revs_per_unit: 2.5464790894703255  # <-- EDIT
     reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 300          # <-- EDIT: 300 rpm = 1.96 rad/s at the link
+    max_motor_rpm: 600          # <-- EDIT: 300 rpm = 1.96 rad/s at the link
     acceleration: 230           # <-- EDIT
     initial_position: 0.0       # <-- EDIT
 
@@ -65,15 +65,15 @@ joints:
     can_id: 2                   # <-- EDIT
     motor_revs_per_unit: 125.0  # <-- EDIT: TODO transmission unknown
     reversed: false             # <-- EDIT
-    max_motor_rpm: 300          # <-- EDIT
+    max_motor_rpm: 600          # <-- EDIT
     acceleration: 200           # <-- EDIT
     initial_position: 0.0       # <-- EDIT
 
   joint_2:
-    mode: virtual               # <-- EDIT: no hardware yet
-    can_id: 4                   # <-- EDIT: TODO confirm
-    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT: TODO transmission unknown
-    reversed: false             # <-- EDIT
+    mode: can                   # <-- EDIT 
+    can_id: 4                   # <-- EDIT
+    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT
+    reversed: true             # <-- EDIT
     max_motor_rpm: 300          # <-- EDIT
     acceleration: 230           # <-- EDIT
     initial_position: 0.0       # <-- EDIT

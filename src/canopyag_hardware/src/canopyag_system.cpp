@@ -18,8 +18,18 @@ namespace
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
-// F5 speed = target speed * this, so the driver keeps up with the reference.
-constexpr double kRpmMargin = 1.2;
+// Streaming F5 (see stream_target): an F5 is a move that ends at rest, so a
+// target that is only one cycle ahead makes the driver brake every cycle -
+// it lags and stutters. Instead each F5 aims at where the reference could stop
+// (its braking distance at the driver's acceleration, times kLeadGain, at most
+// kMaxLeadTime of travel ahead), at the reference speed plus a catch-up term
+// that closes any lag within kCatchupTime.
+constexpr double kLeadGain = 1.5;
+constexpr double kMaxLeadTime = 0.25;   // s
+constexpr double kCatchupTime = 0.25;   // s
+constexpr double kRpmMargin = 1.05;
+// Target velocity: low-pass over the controller's 200 Hz commands.
+constexpr double kCmdVelAlpha = 0.3;
 // Velocity state: first-order low-pass on the encoder difference.
 constexpr double kVelAlpha = 0.3;
 // A target that has not been reached while the motor stands still for this
@@ -83,12 +93,16 @@ CanopyagSystem::CallbackReturn CanopyagSystem::on_init(const hardware_interface:
     startup_check_retries_ = param_int(hp, "startup_check_retries", startup_check_retries_);
     min_rpm_ = param_int(hp, "min_rpm", min_rpm_);
     deadband_counts_ = param_int(hp, "position_deadband_counts", deadband_counts_);
+    turn_timeout_ms_ = param_int(hp, "turn_timeout_ms", turn_timeout_ms_);
     if (can_rate_hz_ < 1 || can_rate_hz_ > 1000) {
       throw std::invalid_argument("can_rate_hz must be 1..1000");
     }
     if (reply_timeout_ms_ < 1 || max_missed_replies_ < 1 || startup_check_retries_ < 1) {
       throw std::invalid_argument(
               "reply_timeout_ms, max_missed_replies and startup_check_retries must be >= 1");
+    }
+    if (turn_timeout_ms_ < 1 || turn_timeout_ms_ * 2 > 1000.0 / can_rate_hz_) {
+      throw std::invalid_argument("turn_timeout_ms must be >= 1 and well inside one CAN cycle");
     }
     if (min_rpm_ < 1 || min_rpm_ > mks::kMaxRpm) {
       throw std::invalid_argument("min_rpm must be 1..3000");
@@ -135,6 +149,7 @@ CanopyagSystem::CallbackReturn CanopyagSystem::on_init(const hardware_interface:
   }
 
   shared_.target.assign(joints_.size(), kNaN);
+  shared_.target_vel.assign(joints_.size(), 0.0);
   shared_.position.assign(joints_.size(), 0.0);
   shared_.velocity.assign(joints_.size(), 0.0);
 
@@ -362,6 +377,9 @@ CanopyagSystem::CallbackReturn CanopyagSystem::on_activate(const rclcpp_lifecycl
     std::lock_guard<std::mutex> lk(mutex_);
     for (std::size_t i = 0; i < joints_.size(); ++i) {
       shared_.target[i] = kNaN;
+      shared_.target_vel[i] = 0.0;
+      joints_[i].prev_command = kNoCommand;
+      joints_[i].command_vel = 0.0;
       shared_.position[i] = joints_[i].position;
       shared_.velocity[i] = 0.0;
     }
@@ -408,13 +426,13 @@ void CanopyagSystem::stop_motors(bool emergency)
     return;
   }
   for (Joint * j : can_joints()) {
-    if (emergency) {
-      // twice: nothing waits for a reply and F7 must not get lost
-      bus_.send(mks::estop(j->cfg.can_id));
-      bus_.send(mks::estop(j->cfg.can_id));
-    } else {
+    // One at a time like everything else; a missing reply gets one retry.
+    const mks::Frame f = emergency ?
+      mks::estop(j->cfg.can_id) :
       // ramped stop that keeps holding torque
-      bus_.send(mks::speed_mode(j->cfg.can_id, 0, static_cast<uint8_t>(j->cfg.acceleration), false));
+      mks::speed_mode(j->cfg.can_id, 0, static_cast<uint8_t>(j->cfg.acceleration), false);
+    if (!turn(f)) {
+      turn(f);
     }
   }
   bus_.pump(5);
@@ -491,14 +509,31 @@ hardware_interface::return_type CanopyagSystem::read(
   return hardware_interface::return_type::OK;
 }
 
-hardware_interface::return_type CanopyagSystem::write(const rclcpp::Time &, const rclcpp::Duration &)
+hardware_interface::return_type CanopyagSystem::write(
+  const rclcpp::Time &, const rclcpp::Duration & period)
 {
   if (fault_) {
     return hardware_interface::return_type::ERROR;
   }
+  // Velocity of the command, here and not in the CAN thread: this runs on the
+  // controller's own clock, so successive commands are exactly one period
+  // apart. (Sampled from the 100 Hz CAN thread, one or three controller steps
+  // can fall into a cycle and the speed jitters by +-50%.)
+  const double dt = period.seconds();
+  for (auto & j : joints_) {
+    if (!std::isfinite(j.command)) {
+      continue;
+    }
+    if (j.prev_command != kNoCommand && dt > 0.0) {
+      const double v = (j.command - j.prev_command) / dt;
+      j.command_vel += kCmdVelAlpha * (v - j.command_vel);
+    }
+    j.prev_command = j.command;
+  }
   std::lock_guard<std::mutex> lk(mutex_);
   for (std::size_t i = 0; i < joints_.size(); ++i) {
     shared_.target[i] = joints_[i].command;
+    shared_.target_vel[i] = joints_[i].command_vel;
   }
   return hardware_interface::return_type::OK;
 }
@@ -532,40 +567,45 @@ void CanopyagSystem::can_loop()
     index.push_back(static_cast<std::size_t>(j - joints_.data()));
   }
 
-  auto t_prev = Clock::now();
+  const auto t_start = Clock::now();
   for (Joint * j : motors) {
-    j->last_reply = t_prev;
+    j->last_reply = t_start;
   }
-  stats_since_ = t_prev;
+  stats_since_ = t_start;
   stats_at_ = bus_.stats();
   reply_timeouts_ = 0;
 
   std::vector<double> targets(joints_.size(), kNaN);
+  std::vector<double> target_vels(joints_.size(), 0.0);
   while (running_) {
     const auto t0 = Clock::now();
-    const double dt = std::chrono::duration<double>(t0 - t_prev).count();
-    t_prev = t0;
 
     {
       std::lock_guard<std::mutex> lk(mutex_);
       targets = shared_.target;
+      target_vels = shared_.target_vel;
     }
 
-    // 1) targets -> F5, 2) request every encoder, 3) one stall poll
+    // One request on the bus at a time: the MKS drivers produce bit errors
+    // (error-warning, error-passive) when two of them answer at once, so
+    // every request waits for its reply before the next one goes out.
+    // Per motor: its F5 if the target moved, then its encoder; then one
+    // motor's stall flag.
     for (std::size_t k = 0; k < motors.size(); ++k) {
       const double t = targets[index[k]];
-      stream_target(*motors[k], std::isfinite(t) ? t : motors[k]->prev_target, dt, t0);
-    }
-    for (Joint * j : motors) {
-      // No discard here: the buffer was emptied at the end of the last cycle,
+      stream_target(
+        *motors[k], std::isfinite(t) ? t : motors[k]->prev_target,
+        std::isfinite(t) ? target_vels[index[k]] : 0.0, t0);
+      // No discard: the buffer was emptied at the end of the last cycle,
       // and a reply that lands late is still fresh data, not stale.
-      bus_.send(mks::read_encoder(j->cfg.can_id));
+      turn(mks::read_encoder(motors[k]->cfg.can_id));
     }
     Joint * poll = motors[stall_poll_next_++ % motors.size()];
     bus_.discard(poll->cfg.can_id, mks::kReadStall);
-    bus_.send(mks::read_stall(poll->cfg.can_id));
+    turn(mks::read_stall(poll->cfg.can_id));
 
-    // 4) listen for the rest of the cycle, then act on what came back
+    // Listen for the rest of the cycle (late replies, F5 "done"), then act
+    // on everything that came back.
     bus_.pump_until(t0 + period);
     const auto now = Clock::now();
     collect_replies(now);
@@ -603,16 +643,42 @@ void CanopyagSystem::can_loop()
   }
 }
 
-void CanopyagSystem::stream_target(Joint & j, double target, double dt, Clock::time_point now)
+bool CanopyagSystem::turn(const mks::Frame & f)
+{
+  const std::size_t had = bus_.count(f.id, f.cmd());
+  if (!bus_.send(f)) {
+    return false;
+  }
+  if (bus_.await_reply(f.id, f.cmd(), had + 1, turn_timeout_ms_)) {
+    return true;
+  }
+  ++turn_timeouts_;
+  return false;
+}
+
+void CanopyagSystem::stream_target(
+  Joint & j, double target, double target_vel, Clock::time_point now)
 {
   const JointConfig & c = j.cfg;
   target = c.clamp(target);
-
-  // Speed the target is moving at, from how far it moved since last cycle.
-  const double target_vel = dt > 0.0 ? (target - j.prev_target) / dt : 0.0;
   j.prev_target = target;
 
-  const int64_t wanted = c.joint_to_counts(target, j.zero_counts);
+  // The reference can never be faster than the joint's speed cap; a step
+  // command (forward_position_controller) would otherwise look like a huge
+  // velocity for one cycle.
+  const double vmax = c.rpm_to_joint_vel(c.max_motor_rpm);
+  const double v = std::clamp(target_vel, -vmax, vmax);
+
+  // Aim ahead by the driver's braking distance at this speed, so it never
+  // decides to stop short while the reference keeps moving. Joint units.
+  double lead = 0.0;
+  if (c.acceleration > 0 && std::abs(v) > 0.0) {
+    const double accel = c.rpm_to_joint_vel(20000.0 / (256 - c.acceleration));  // units/s^2
+    lead = std::min(kLeadGain * v * v / (2.0 * accel), std::abs(v) * kMaxLeadTime);
+  }
+  const double aim = c.clamp(target + std::copysign(lead, v));
+
+  const int64_t wanted = c.joint_to_counts(aim, j.zero_counts);
   const int32_t counts = mks::clamp_i24(wanted);
   if (counts != wanted && !j.range_warned) {
     RCLCPP_WARN(
@@ -622,23 +688,29 @@ void CanopyagSystem::stream_target(Joint & j, double target, double dt, Clock::t
     j.range_warned = true;
   }
 
+  const int32_t ref_counts = mks::clamp_i24(c.joint_to_counts(target, j.zero_counts));
   const bool target_moved = std::llabs(counts - j.sent_counts) > deadband_counts_;
-  const bool not_there = std::llabs(counts - j.counts) > 4 * deadband_counts_;
+  const bool not_there = std::llabs(ref_counts - j.counts) > 4 * deadband_counts_;
   const bool stuck = not_there && now - j.still_since > kResendAfter && now - j.sent_stamp > kResendAfter;
   if (!target_moved && !stuck) {
     return;
   }
 
-  uint16_t rpm = j.sent_rpm;
-  if (target_moved) {
-    const double r = c.joint_vel_to_rpm(target_vel) * kRpmMargin;
-    rpm = static_cast<uint16_t>(std::clamp<double>(std::ceil(r), min_rpm_, c.max_motor_rpm));
-  }
+  // Speed cap: the reference speed, plus whatever closes the lag in
+  // kCatchupTime (minus, when the motor is ahead of the reference).
+  const double measured = c.counts_to_joint(j.counts, j.zero_counts);
+  const double lag = target - measured;   // joint units, signed
+  const double along = std::abs(v) > 1e-9 ? std::copysign(1.0, v) * lag : std::abs(lag);
+  const double r = c.joint_vel_to_rpm(v) * kRpmMargin + c.joint_vel_to_rpm(along / kCatchupTime) *
+    (along >= 0.0 ? 1.0 : -1.0);
+  const uint16_t rpm = static_cast<uint16_t>(
+    std::clamp<double>(std::ceil(r), min_rpm_, c.max_motor_rpm));
 
-  bus_.send(mks::abs_move(c.can_id, rpm, static_cast<uint8_t>(c.acceleration), counts));
+  turn(mks::abs_move(c.can_id, rpm, static_cast<uint8_t>(c.acceleration), counts));
   RCLCPP_DEBUG(
-    logger_, "%s F5 -> %.5f units = %d counts (%+.3f motor revs from zero) @ %u rpm%s",
-    c.name.c_str(), target, counts,
+    logger_, "%s F5 -> %.5f units (ref %.5f, %+.4f units/s, lag %+.5f) = %d counts "
+    "(%+.3f motor revs from zero) @ %u rpm%s",
+    c.name.c_str(), aim, target, v, lag, counts,
     static_cast<double>(counts - j.zero_counts) / mks::kCountsPerRev, rpm,
     target_moved ? "" : " (resend: motor stopped short)");
   j.sent_counts = counts;
@@ -709,10 +781,11 @@ void CanopyagSystem::log_stats(Clock::time_point now)
   const auto & s = bus_.stats();
   const double secs = std::chrono::duration<double>(now - stats_since_).count();
   RCLCPP_DEBUG(
-    logger_, "CAN %.0f tx/s, %.0f rx/s, %lu missed 0x31 replies, %lu bad CRC, %lu error frames "
-    "in the last %.0f s",
+    logger_, "CAN %.0f tx/s, %.0f rx/s, %lu missed 0x31 replies, %lu late replies (> %d ms), "
+    "%lu bad CRC, %lu error frames in the last %.0f s",
     (s.tx - stats_at_.tx) / secs, (s.rx - stats_at_.rx) / secs,
-    static_cast<unsigned long>(reply_timeouts_),
+    static_cast<unsigned long>(reply_timeouts_), static_cast<unsigned long>(turn_timeouts_),
+    turn_timeout_ms_,
     static_cast<unsigned long>(s.bad_crc - stats_at_.bad_crc),
     static_cast<unsigned long>(s.error_frames - stats_at_.error_frames), secs);
   for (Joint * j : can_joints()) {
@@ -725,6 +798,7 @@ void CanopyagSystem::log_stats(Clock::time_point now)
   stats_since_ = now;
   stats_at_ = s;
   reply_timeouts_ = 0;
+  turn_timeouts_ = 0;
 }
 
 }  // namespace canopyag_hardware

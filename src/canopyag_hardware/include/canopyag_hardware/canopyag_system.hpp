@@ -61,6 +61,7 @@ public:
 
 private:
   using Clock = std::chrono::steady_clock;
+  static constexpr double kNoCommand = 1e300;
 
   struct Joint
   {
@@ -70,6 +71,8 @@ private:
     double command = 0.0;
     double position = 0.0;
     double velocity = 0.0;
+    double prev_command = kNoCommand;  // last write(), for the target velocity
+    double command_vel = 0.0;          // filtered, units/s
 
     // CAN-thread side (and lifecycle callbacks while the thread is stopped).
     int64_t zero_counts = 0;
@@ -89,6 +92,7 @@ private:
   struct Shared
   {
     std::vector<double> target;     // joint units, NaN = keep the last one
+    std::vector<double> target_vel; // units/s, from successive write()s
     std::vector<double> position;
     std::vector<double> velocity;
   };
@@ -101,7 +105,9 @@ private:
 
   // ---- CAN thread ----
   void can_loop();
-  void stream_target(Joint & j, double target, double dt, Clock::time_point now);
+  void stream_target(Joint & j, double target, double target_vel, Clock::time_point now);
+  // Send one request and wait (up to turn_timeout_ms) for its reply.
+  bool turn(const mks::Frame & f);
   void collect_replies(Clock::time_point now);
   void raise_fault(const std::string & reason);
   void log_stats(Clock::time_point now);
@@ -122,6 +128,7 @@ private:
   int startup_check_retries_ = 3;
   int min_rpm_ = 10;
   int deadband_counts_ = 4;
+  int turn_timeout_ms_ = 5;
 
   MksBus bus_;
   bool zeroed_ = false;
@@ -139,6 +146,7 @@ private:
   Clock::time_point stats_since_{};
   MksBus::Stats stats_at_{};
   uint64_t reply_timeouts_ = 0;
+  uint64_t turn_timeouts_ = 0;   // a request whose reply did not come in turn_timeout_ms
   std::size_t stall_poll_next_ = 0;
 };
 

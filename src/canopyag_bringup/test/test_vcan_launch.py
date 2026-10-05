@@ -12,6 +12,7 @@ Needs vcan0 (README "Testing on vcan0"); without it every case is skipped.
 """
 
 import os
+import re
 import socket
 import struct
 import threading
@@ -32,6 +33,11 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 
+# Own ROS domain: a real robot running hardware.launch.py on the same machine
+# also has a /controller_manager, and this test must never talk to it.
+# Set before rclpy.init() and before launch starts any process (they inherit it).
+os.environ["ROS_DOMAIN_ID"] = os.environ.get("CANOPYAG_TEST_DOMAIN_ID", "77")
+
 IFACE = "vcan0"
 HERE = Path(__file__).resolve().parent
 FORWARD_JOINTS = ["z_carriage", "joint_1", "joint_2"]
@@ -41,6 +47,9 @@ MOTOR_IDS = (1, 3)
 # case -> (mks_sim.py flags, expected outcome, text the FAULT/FATAL log must contain)
 CASES = {
     "nominal":         ([], "track", None),
+    "latency_3ms":     (["--latency", "3"], "track", None),
+    # Slower than the plugin's 5 ms reply wait: requests overlap by design,
+    # tracking must still work.
     "latency_20ms":    (["--latency", "20"], "track", None),
     "no_done":         (["--no-done"], "track", None),
     "retarget_ignore": (["--retarget", "ignore"], "track", None),
@@ -233,3 +242,12 @@ class TestVcan(unittest.TestCase):
         f5 = [d for i, d in sniffer.frames if i == 3 and d[0] == 0xF5 and len(d) == 8]
         last = int.from_bytes(f5[-1][4:7], "big", signed=True)
         self.assertLess(last, 12345, "reversed joint moved the motor the wrong way")
+        # One request on the bus at a time: the real drivers produce bit errors
+        # when two of them answer at once. mks_sim.py numbers every request that
+        # arrives while another driver still owes a reply. Streaming the old
+        # way did that every cycle; a few can come from the simulator itself
+        # running late on a busy machine.
+        overlaps = [int(m) for ev in proc_output
+                    for m in re.findall(r"OVERLAP #(\d+)", ev.text.decode(errors="replace"))]
+        if case != "latency_20ms":
+            self.assertLess(max(overlaps, default=0), 20, "requests overlap on the bus")
