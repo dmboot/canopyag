@@ -8,10 +8,10 @@ Target: **ROS 2 Humble / Ubuntu 22.04 / Gazebo Fortress**
 ```
 world
 └── gantry
-    ├── z_carriage  prismatic   0 .. 1.22 m     carriage          CAN ID 1  virtual for now
-    │   └── joint_1  revolute   ±1.65 rad       mid_link          CAN ID 3  real motor
-    │       └── joint_2  continuous             endeffector_link  CAN ID 4  real motor
-    └── z_crate     prismatic   0 .. 1.215 m    crate             CAN ID 2  virtual for now
+    ├── z_carriage  prismatic   0 .. 1.22 m     carriage          CAN ID 1  real motor
+    │   └── joint_1  revolute   ±2.094 rad      mid_link          CAN ID 3  real motor
+    │       └── joint_2  revolute   0 .. 2π rad     endeffector_link  CAN ID 4  real motor
+    └── z_crate     prismatic   0 .. 1.215 m    crate             CAN ID 2  real motor
 ```
 
 "Virtual" joints have no motor yet: the plugin copies their command to their
@@ -82,6 +82,7 @@ purpose. Pick one way of moving the robot:
 | `BUS-OFF` | CAN bus broke down | check wiring, then `sudo ip link set can0 down && sudo ip link set can0 up` |
 | goal ABORTED, `State tolerances failed` | the motor fell behind the trajectory | slower `speed:=`, or see **make it faster** below |
 | ghost and robot move apart in RViz | motor not following: lag, direction or scaling | see the `hardware.yaml` rows below |
+| `CAN cycle takes … ms` warning | too many motors for `can_rate_hz`: the requests no longer fit in one cycle | lower `can_rate_hz` in `hardware.yaml` to the number it suggests |
 
 On every fault the plugin sends an emergency stop (F7) to all motors and
 stops; the only way back is restarting terminal 1.
@@ -101,13 +102,14 @@ Restart terminal 1 after editing `hardware.yaml` (no rebuild needed). Run
 | I want to | edit | how |
 |---|---|---|
 | **flip a joint's direction** | `canopyag_description/config/hardware.yaml` | that joint's `reversed: true` / `false` |
-| **fix how far a joint moves** | `hardware.yaml` | `motor_revs_per_unit`: gear ratio G on a revolute joint is `G / 2π` (16:1 = 2.546); belt or lead screw with L metres per motor rev is `1 / L` |
+| **fix how far a joint moves** | `hardware.yaml` | `motor_revs_per_unit`: gear ratio G on a revolute joint is `G / 2π` (9.6:1 = 1.528, 12:1 = 1.910, 16:1 = 2.546); belt or lead screw with L metres per motor rev is `1 / L` |
 | **add a motor / take one out** | `hardware.yaml` | `mode: can` (real) or `mode: virtual`, and the right `can_id` |
 | **make the demo faster** | launch argument | `speed:=` up to `1.0` |
 | **make it faster than `speed:=1.0`** | `canopyag_moveit_config/config/joint_limits.yaml` (`max_velocity`, `max_acceleration`) **and** `canopyag_description/config/robot_parameters.yaml` (`limit.velocity`) | then check the two motor limits below |
-| …so the motor keeps up | `hardware.yaml` `max_motor_rpm` | at least `max_velocity × motor_revs_per_unit × 72` (16:1: 1.5 rad/s → 275 rpm, 3 rad/s → 550 rpm), at most 3000 |
-| …and accelerates in time | `hardware.yaml` `acceleration` | the driver ramps at `20000 / (256 − acceleration)` motor rpm/s. At 16:1, 230 ≈ 5 rad/s², 245 ≈ 12 rad/s². Keep `max_acceleration` below that |
-| change the demo waypoints | `canopyag_moveit_config/scripts/demo_path.py`, `WAYPOINTS` | `(name, (z_carriage, joint_1, joint_2), scaling)` |
+| …so the motor keeps up | `hardware.yaml` `max_motor_rpm` | at least `max_velocity × motor_revs_per_unit × 72` (9.6:1: 3.5 rad/s → 385 rpm), at most 3000 |
+| …and accelerates in time | `hardware.yaml` `acceleration` | the driver ramps at `20000 / (256 − acceleration)` motor rpm/s. At 9.6:1, 230 ≈ 8 rad/s², 240 ≈ 14 rad/s². Keep `max_acceleration` below that |
+| change the demo waypoints | `canopyag_moveit_config/scripts/demo_path.py`: `PICKS`, `LEVELS`, `CARRY` | joint angles in degrees for the right side; `side:=left` mirrors them. Keep link 2's 180° turn at \|joint_1\| ≲ 20°, or its box sweeps through the carriage |
+| pick on the other side | launch argument | `side:=left` (default `right`, seen from the front of the gantry) |
 | see what the plugin sends | terminal 1 | add `hw_log_level:=debug`: every F5 with target, lag and rpm, and every 10 s the CAN rates and late replies |
 | import a new CAD export | `canopyag_description/scripts/import_solidworks_urdf.py` | see **Re-importing the CAD** |
 
@@ -115,10 +117,10 @@ Current motors (`hardware.yaml`):
 
 | joint | CAN ID | transmission | `motor_revs_per_unit` | `reversed` | checked |
 |---|---|---|---|---|---|
-| `joint_1` | 3 | 16:1 | 2.546 rev/rad | false | direction and scaling |
-| `joint_2` | 4 | assumed 16:1 | 2.546 rev/rad | true | direction; **scaling still to check** |
-| `z_carriage` | 1 | 5:1 + GT2 belt, 20T pulley (8 mm per motor rev) | 125 rev/m | false | not yet (virtual) |
-| `z_crate` | 2 | TODO | TODO | | not yet (virtual) |
+| `joint_1` | 3 | 9.6:1 | 1.528 rev/rad | false | direction; scaling to re-check after the gearbox change |
+| `joint_2` | 4 | 12:1 | 1.910 rev/rad | true | direction; **scaling still to check** |
+| `z_carriage` | 1 | 5:1 + GT2 belt, 20T pulley (8 mm per motor rev) | 125 rev/m | false | not yet |
+| `z_crate` | 2 | TODO | 125 rev/m (placeholder) | false | not yet |
 
 ## Test without the robot
 
@@ -186,10 +188,12 @@ changes.
 
 The plugin runs its own 100 Hz CAN loop. For each real motor, every cycle,
 it sends an absolute position move (F5) that aims slightly ahead of the
-trajectory (by the driver's braking distance), at the trajectory's speed plus
-a catch-up term, and reads the encoder back (0x31). It talks to one driver at a
-time and waits for each reply, because these drivers produce CAN errors when
-two of them answer at once.
+trajectory (by the driver's braking distance plus the travel during two
+measured CAN cycles), at the trajectory's speed plus a catch-up term, and
+reads the encoder back (0x31). It talks to one driver at a time and waits for
+each reply, because these drivers produce CAN errors when two of them answer
+at once. So the cycle gets longer with every motor: with four it no longer
+fits in 10 ms, and the plugin warns (`CAN cycle takes … ms`).
 
 CAN wiring: CAN_H to CAN_L measures 60 Ω with the power off, with a 120 Ω
 terminator at each physical end of the chain (adapter and last driver). Every
@@ -198,10 +202,10 @@ driver: `Mode = SR_vFOC`, `CanRate = 500K`, a unique `CanID`, `Respon` and
 
 ## Next
 
-1. **joint_2 scaling:** command 1.571 rad (90°) and check it against a mark.
-   If it is off, its gear ratio is not 16:1; fix `motor_revs_per_unit`.
-2. **z_carriage:** set `mode: can`, small steps, then check 125 rev/m with a
-   tape measure, and the direction.
+1. **joint_1 / joint_2 scaling:** command 1.571 rad (90°) and check it
+   against a mark (new 9.6:1 and 12:1 gearboxes).
+2. **z_carriage:** small steps, then check 125 rev/m with a tape measure,
+   and the direction.
 3. **z_crate:** fill in its transmission, then the same.
 4. Real joint limits, efforts and velocities. The current ones are guesses.
 5. Homing against the limit switches, to replace zero-at-startup.

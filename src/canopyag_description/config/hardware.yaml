@@ -39,41 +39,42 @@ hardware:
 
 joints:
   z_carriage:
-    mode: virtual                   # <-- EDIT
+    mode: can                   # <-- EDIT
     can_id: 1                   # <-- EDIT
     # 5:1 gearbox -> GT2 belt (2 mm pitch, 6 mm wide) on a 20-tooth pulley:
     #   L = 20 * 0.002 m / 5 = 0.008 m per motor rev -> 1 / L = 125
     # (other pulleys: 16T -> 156.25, 30T -> 83.333)
     motor_revs_per_unit: 125.0  # <-- EDIT
     reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 600          # <-- EDIT: 600 rpm = 0.08 m/s at 125 rev/m
-    acceleration: 200           # <-- EDIT
+    max_motor_rpm: 2000         # <-- EDIT: 2000 rpm = 0.27 m/s at 125 rev/m
+    acceleration: 252           # <-- EDIT: 5000 rpm/s = 0.67 m/s^2 (joint_limits: 0.5)
     initial_position: 0.0       # <-- EDIT
 
   joint_1:
     mode: can                   # <-- EDIT
     can_id: 3                   # <-- EDIT
-    # 16:1 gearbox: 16 / (2 pi)
-    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT
+    # 9.6:1 gearbox: 9.6 / (2 pi)
+    motor_revs_per_unit: 1.5278874536821951  # <-- EDIT
     reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 600          # <-- EDIT: 300 rpm = 1.96 rad/s at the link
-    acceleration: 230           # <-- EDIT
+    max_motor_rpm: 900          # <-- EDIT: 900 rpm = 9.8 rad/s at the link
+    acceleration: 240           # <-- EDIT: 1250 rpm/s = 13.6 rad/s^2 (joint_limits: 5)
     initial_position: 0.0       # <-- EDIT
 
   z_crate:
-    mode: virtual               # <-- EDIT: no mechanics yet
+    mode: can                   # <-- EDIT
     can_id: 2                   # <-- EDIT
     motor_revs_per_unit: 125.0  # <-- EDIT: TODO transmission unknown
     reversed: false             # <-- EDIT
-    max_motor_rpm: 600          # <-- EDIT
-    acceleration: 200           # <-- EDIT
+    max_motor_rpm: 1500         # <-- EDIT: 0.2 m/s at 125 rev/m
+    acceleration: 250           # <-- EDIT: 3333 rpm/s = 0.44 m/s^2
     initial_position: 0.0       # <-- EDIT
 
   joint_2:
     mode: can                   # <-- EDIT 
     can_id: 4                   # <-- EDIT
-    motor_revs_per_unit: 2.5464790894703255  # <-- EDIT
+    # 12:1 gearbox: 12 / (2 pi)
+    motor_revs_per_unit: 1.909859317102744  # <-- EDIT
     reversed: true             # <-- EDIT
-    max_motor_rpm: 300          # <-- EDIT
-    acceleration: 230           # <-- EDIT
+    max_motor_rpm: 900          # <-- EDIT: 900 rpm = 7.9 rad/s at the link
+    acceleration: 240           # <-- EDIT: 1250 rpm/s = 10.9 rad/s^2 (joint_limits: 5)
     initial_position: 0.0       # <-- EDIT

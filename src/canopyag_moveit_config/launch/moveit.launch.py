@@ -82,7 +82,8 @@ def generate_launch_description():
         package="canopyag_moveit_config",
         executable="demo_path.py",
         parameters=[{"loop": LaunchConfiguration("loop"),
-                     "speed": LaunchConfiguration("speed")}],
+                     "speed": LaunchConfiguration("speed"),
+                     "side": LaunchConfiguration("side")}],
         condition=IfCondition(LaunchConfiguration("demo")),
         output="screen",
     )
@@ -94,6 +95,9 @@ def generate_launch_description():
                               description="Repeat the demo path until stopped."),
         DeclareLaunchArgument("speed", default_value="1.0",
                               description="Scale on every demo move (0..1]."),
+        DeclareLaunchArgument("side", default_value="right",
+                              description="Which side of the gantry the demo picks on, "
+                                          "seen from the front: right or left."),
         DeclareLaunchArgument("rviz", default_value="true"),
         move_group,
         rviz,

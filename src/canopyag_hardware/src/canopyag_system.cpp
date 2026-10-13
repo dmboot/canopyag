@@ -21,10 +21,15 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 // Streaming F5 (see stream_target): an F5 is a move that ends at rest, so a
 // target that is only one cycle ahead makes the driver brake every cycle -
 // it lags and stutters. Instead each F5 aims at where the reference could stop
-// (its braking distance at the driver's acceleration, times kLeadGain, at most
-// kMaxLeadTime of travel ahead), at the reference speed plus a catch-up term
-// that closes any lag within kCatchupTime.
+// (its braking distance at the driver's acceleration, times kLeadGain) plus
+// the travel until the next F5 can arrive (kCycleLead measured CAN cycles),
+// at most kMaxLeadTime of travel ahead, at the reference speed plus a
+// catch-up term that closes any lag within kCatchupTime.
+// Without the cycle term the lead is too short at low motor rpm (a low gear
+// ratio, a slow demo) or a long cycle (more motors on the bus): the driver
+// starts braking before the next F5 arrives, every cycle.
 constexpr double kLeadGain = 1.5;
+constexpr double kCycleLead = 2.0;
 constexpr double kMaxLeadTime = 0.25;   // s
 constexpr double kCatchupTime = 0.25;   // s
 constexpr double kRpmMargin = 1.05;
@@ -577,8 +582,17 @@ void CanopyagSystem::can_loop()
 
   std::vector<double> targets(joints_.size(), kNaN);
   std::vector<double> target_vels(joints_.size(), 0.0);
+  cycle_s_ = std::chrono::duration<double>(period).count();
+  cycle_max_s_ = 0.0;
+  auto t_prev = t_start;
   while (running_) {
     const auto t0 = Clock::now();
+    // The real cycle, not the nominal one: with more motors on the bus the
+    // request/reply turns no longer fit in one period and it runs long.
+    const double cycle = std::chrono::duration<double>(t0 - t_prev).count();
+    t_prev = t0;
+    cycle_s_ += kVelAlpha * (cycle - cycle_s_);
+    cycle_max_s_ = std::max(cycle_max_s_, cycle);
 
     {
       std::lock_guard<std::mutex> lk(mutex_);
@@ -674,7 +688,9 @@ void CanopyagSystem::stream_target(
   double lead = 0.0;
   if (c.acceleration > 0 && std::abs(v) > 0.0) {
     const double accel = c.rpm_to_joint_vel(20000.0 / (256 - c.acceleration));  // units/s^2
-    lead = std::min(kLeadGain * v * v / (2.0 * accel), std::abs(v) * kMaxLeadTime);
+    lead = std::min(
+      kLeadGain * v * v / (2.0 * accel) + std::abs(v) * kCycleLead * cycle_s_,
+      std::abs(v) * kMaxLeadTime);
   }
   const double aim = c.clamp(target + std::copysign(lead, v));
 
@@ -780,6 +796,14 @@ void CanopyagSystem::log_stats(Clock::time_point now)
   }
   const auto & s = bus_.stats();
   const double secs = std::chrono::duration<double>(now - stats_since_).count();
+  if (cycle_s_ > 1.2 / can_rate_hz_) {
+    RCLCPP_WARN(
+      logger_, "CAN cycle takes %.1f ms (longest %.1f ms), longer than the %.1f ms of "
+      "can_rate_hz %.0f: the request/reply turns for %zu motor(s) do not fit. Lower "
+      "can_rate_hz in hardware.yaml to about %.0f.",
+      1e3 * cycle_s_, 1e3 * cycle_max_s_, 1e3 / can_rate_hz_, can_rate_hz_,
+      can_joints().size(), std::floor(0.9 / cycle_s_));
+  }
   RCLCPP_DEBUG(
     logger_, "CAN %.0f tx/s, %.0f rx/s, %lu missed 0x31 replies, %lu late replies (> %d ms), "
     "%lu bad CRC, %lu error frames in the last %.0f s",
@@ -797,6 +821,7 @@ void CanopyagSystem::log_stats(Clock::time_point now)
   }
   stats_since_ = now;
   stats_at_ = s;
+  cycle_max_s_ = 0.0;
   reply_timeouts_ = 0;
   turn_timeouts_ = 0;
 }

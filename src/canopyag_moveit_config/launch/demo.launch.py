@@ -59,7 +59,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(here, "moveit.launch.py")),
         launch_arguments={"demo": LaunchConfiguration("demo"),
                           "loop": LaunchConfiguration("loop"),
-                          "speed": LaunchConfiguration("speed")}.items(),
+                          "speed": LaunchConfiguration("speed"),
+                          "side": LaunchConfiguration("side")}.items(),
     )
 
     return LaunchDescription([
@@ -69,6 +70,9 @@ def generate_launch_description():
                               description="Repeat the demo path until stopped."),
         DeclareLaunchArgument("speed", default_value="1.0",
                               description="Scale on every demo move (0..1]."),
+        DeclareLaunchArgument("side", default_value="right",
+                              description="Which side of the gantry the demo picks on, "
+                                          "seen from the front: right or left."),
         robot_state_publisher,
         control_node,
         jsb,

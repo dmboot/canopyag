@@ -148,6 +148,8 @@ private:
   uint64_t reply_timeouts_ = 0;
   uint64_t turn_timeouts_ = 0;   // a request whose reply did not come in turn_timeout_ms
   std::size_t stall_poll_next_ = 0;
+  double cycle_s_ = 0.0;          // measured CAN cycle (filtered), s
+  double cycle_max_s_ = 0.0;      // longest cycle since the last stats line, s
 };
 
 }  // namespace canopyag_hardware

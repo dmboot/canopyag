@@ -124,7 +124,7 @@ joints:
     xyz: [0.071, -0.00085, 0.0]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 0.25, lower: 0.0, upper: 1.215}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 1.215}
     dynamics: {damping: 0.0, friction: 0.0}
   z_carriage:
     type: prismatic
@@ -133,7 +133,7 @@ joints:
     xyz: [0.071, -0.00085, 0.165]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 0.25, lower: 0, upper: 1.22}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0, upper: 1.22}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_1:
     type: revolute
@@ -142,18 +142,15 @@ joints:
     xyz: [0.131, 0.0, 0.09785]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 1.5, lower: -1.65, upper: 1.65}
+    limit: {effort: 50.0, velocity: 3.0, lower: -2.094, upper: 2.094}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_2:
-    type: continuous
+    type: revolute
     parent: mid_link
     child: endeffector_link
     xyz: [0.37, 0.0, -0.0007495]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 1.5}
+    limit: {effort: 50.0, velocity: 3.0, lower: 0, upper: 6.283}
     dynamics: {damping: 0.0, friction: 0.0}
 
-# Importer notes from the last run:
-#   joint_1: export has no limits, kept revolute because of the preserved limit -1.65 .. 1.65
-#   meshes/visual/endeffector.stl is no longer referenced

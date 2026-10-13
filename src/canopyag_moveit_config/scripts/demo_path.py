@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Hard-coded demo path: the arm works its way up the gantry, the crate follows.
+"""Hard-coded demo path: the arm picks its way up one side of the gantry, the
+crate follows.
 
-    ros2 launch canopyag_moveit_config demo.launch.py [loop:=true] [speed:=0.5]
+    ros2 launch canopyag_moveit_config demo.launch.py [loop:=true] [speed:=0.5] [side:=left]
     ros2 launch canopyag_moveit_config moveit.launch.py demo:=true speed:=0.3   # real robot
 
 `speed` (0..1] scales every move: the arm's velocity scaling per waypoint and
-the crate's follow speeds.
+the crate's follow speeds. `side` (right / left, seen from the front of the
+gantry) is where the arm picks; see PICKS.
 
-The arm (carriage + two revolutes) goes through WAYPOINTS as point-to-point
+The arm (carriage + two revolutes) goes through waypoints() as point-to-point
 moves: a straight line in joint space, all three joints starting and stopping
 together, each within its own limit from config/joint_limits.yaml. MoveIt
 checks every sample for collisions (the boxes in robot_parameters.yaml,
@@ -64,18 +66,59 @@ CHECKS_IN_FLIGHT = 8     # concurrent /check_state_validity calls
 # ends at REST, with the carriage lifted clear.
 REST = (0.05, 0.0, 0.0)
 
-# (name, [z_carriage, joint_1, joint_2], velocity scaling)
-# The z values are where the carriage is, so the crate follows the climb.
-WAYPOINTS = [("rest", REST, 0.5)]
-for i, z in enumerate((0.35, 0.65, 0.95)):
-    WAYPOINTS += [
-        (f"level{i}_reach_left",  (z, 0.8, -1.1), 0.6),
-        (f"level{i}_pick_left",   (z + 0.05, 0.6, -0.6), 0.3),
-        (f"level{i}_reach_right", (z + 0.05, -0.8, 1.1), 0.6),
-        (f"level{i}_pick_right",  (z + 0.10, -0.6, 0.6), 0.3),
-        (f"level{i}_stow",        (z + 0.10, 0.0, 0.0), 0.6),
-    ]
-WAYPOINTS += [("back_down", (0.30, 0.0, 0.0), 0.8), ("rest", REST, 0.5)]
+# The fruit hangs beside the gantry, on ONE side. Per fruit, for the right
+# side (seen from the front, joint_1 > 0), in degrees:
+#   (carriage height above the level, reach (joint_1, joint_2), pick (joint_1, joint_2))
+# reach stops short of the fruit, pick goes in with the arm almost straight.
+# The tips are 0.49..0.64 m out to the side, 0.28..0.49 m in front of the
+# column (tool point TOOL along endeffector_link).
+PICKS = [
+    (0.00, (50.0, 30.0), (58.0, 14.0)),
+    (0.10, (70.0, 28.0), (78.0, 12.0)),
+]
+LEVELS = (0.35, 0.65, 0.95)   # m, carriage height of each row of fruit
+# Then the arm swings to joint_1 = CARRY and link 2 turns 180 deg, folding
+# under link 1 to drop the fruit under itself, and turns back. Link 2 can only
+# make that turn with link 1 near the middle: from |joint_1| ~ 30 deg its box
+# sweeps through the carriage, and at 120 deg through the gantry. 15 deg keeps
+# 8 deg of margin in both joints (checked against the collision boxes).
+CARRY = 15.0
+DROP_TURN = 180.0
+LINK_1, TOOL = 0.37, 0.28     # m, joint_1 -> joint_2, joint_2 -> tool point
+
+
+def side_pose(j1, j2, side):
+    """Right-side (joint_1, joint_2) in degrees -> radians on `side`.
+
+    joint_2 only turns 0..360 deg, so the left side cannot just negate it.
+    The left pose keeps joint_2 (the same elbow bend) and turns joint_1 so the
+    tool point lands on the mirror image of the right one."""
+    a1, a2 = math.radians(j1), math.radians(j2)
+    if side == "right":
+        return a1, a2
+    bend = math.atan2(TOOL * math.sin(a2), LINK_1 + TOOL * math.cos(a2))
+    return -(a1 + 2.0 * bend), a2
+
+
+def waypoints(side):
+    """(name, (z_carriage, joint_1, joint_2), velocity scaling) for the whole path.
+    The z values are where the carriage is, so the crate follows the climb."""
+    s = 1.0 if side == "right" else -1.0
+    path = [("rest", REST, 0.5)]
+    for i, z0 in enumerate(LEVELS):
+        for k, (dz, reach, pick) in enumerate(PICKS):
+            z, name = z0 + dz, f"level{i}_fruit{k}"
+            j2 = math.radians(pick[1])
+            carry = s * math.radians(CARRY)
+            path += [
+                (f"{name}_reach",  (z, *side_pose(*reach, side)), 0.6),
+                (f"{name}_pick",   (z, *side_pose(*pick, side)), 0.3),
+                (f"{name}_carry",  (z, carry, j2), 0.6),
+                (f"{name}_drop",   (z, carry, j2 + math.radians(DROP_TURN)), 0.8),
+                (f"{name}_unfold", (z, carry, j2), 0.8),
+            ]
+    path += [("back_down", (0.30, 0.0, 0.0), 0.8), ("rest", REST, 0.5)]
+    return path
 
 
 class Shutdown(Exception):
@@ -87,6 +130,9 @@ class DemoPath(Node):
     def __init__(self):
         super().__init__("demo_path")
         self.declare_parameter("loop", False)
+        self.side = str(self.declare_parameter("side", "right").value)
+        if self.side not in ("right", "left"):
+            raise ValueError(f"side must be right or left, got {self.side}")
         self.speed = float(self.declare_parameter("speed", 1.0).value)
         if not 0.0 < self.speed <= 1.0:
             raise ValueError(f"speed must be in (0, 1], got {self.speed}")
@@ -349,7 +395,7 @@ class DemoPath(Node):
                 time.sleep(0.1)
 
         while rclpy.ok():
-            for name, pose, scale in WAYPOINTS:
+            for name, pose, scale in waypoints(self.side):
                 if not self.move_arm(name, pose, scale):
                     return
             self.get_logger().info(
