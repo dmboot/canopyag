@@ -1,19 +1,19 @@
-"""MoveIt (move_group + RViz) and the demo path, WITHOUT ros2_control.
+"""MoveIt (move_group + RViz), WITHOUT ros2_control: plan by hand in RViz.
 
 Attaches to whatever controller manager is already running:
 
     # the real robot
     ros2 launch canopyag_bringup hardware.launch.py
     ros2 control switch_controllers --activate arm_controller
-    ros2 launch canopyag_moveit_config moveit.launch.py demo:=true speed:=0.3
+    ros2 launch canopyag_moveit_config moveit.launch.py
 
     # mock hardware: demo.launch.py includes this file
 
 move_group only reads the URDF for kinematics and collision geometry, so the
 mock variant of the robot description is used here whatever the hardware is.
 
-speed scales every move of the demo path (1.0 = the planning limits in
-config/joint_limits.yaml). Start low on the real robot.
+Goals in world coordinates and the demo path do not use MoveIt: see
+canopyag_motion.
 """
 
 import os
@@ -78,29 +78,8 @@ def generate_launch_description():
         output="log",
     )
 
-    demo = Node(
-        package="canopyag_moveit_config",
-        executable="demo_path.py",
-        parameters=[{"loop": LaunchConfiguration("loop"),
-                     "speed": LaunchConfiguration("speed"),
-                     "side": LaunchConfiguration("side")}],
-        condition=IfCondition(LaunchConfiguration("demo")),
-        output="screen",
-    )
-
     return LaunchDescription([
-        DeclareLaunchArgument("demo", default_value="false",
-                              description="Run the scripted demo path."),
-        DeclareLaunchArgument("loop", default_value="false",
-                              description="Repeat the demo path until stopped."),
-        DeclareLaunchArgument("speed", default_value="1.0",
-                              description="Scale on every demo move (0..1]."),
-        DeclareLaunchArgument("side", default_value="right",
-                              description="Which side of the gantry the demo picks on, "
-                                          "seen from the front: right or left."),
         DeclareLaunchArgument("rviz", default_value="true"),
         move_group,
         rviz,
-        # The script waits for move_group and both controllers itself.
-        demo,
     ])

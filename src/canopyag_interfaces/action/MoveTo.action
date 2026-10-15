@@ -1,0 +1,18 @@
+# Move the robot to a goal as fast as its limits allow (canopyag_motion).
+#
+# Goal: the tool point to `point` (world frame, m) - or, when `joints` is not
+# empty, the arm to [z_carriage (m), joint_1 (rad), joint_2 (rad)].
+geometry_msgs/Point point
+float64[] joints
+# 0..1: scales every velocity and acceleration limit. 0 means 1 (full speed).
+float64 speed
+---
+bool success
+string message
+# Where the arm is sent: [z_carriage, joint_1, joint_2].
+float64[] joints
+# Planned duration of the motion, s.
+float64 duration
+---
+# Time until the motion ends, s.
+float64 time_left

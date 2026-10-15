@@ -1,0 +1,53 @@
+# ===========================================================================
+# canopyag_motion - how the robot moves to a goal
+# ===========================================================================
+# Read by motion_server.py at start-up (restart it after an edit; with
+# --symlink-install no rebuild is needed). The geometry (joint origins,
+# limits, collision boxes) comes from canopyag_description's
+# robot_parameters.yaml, not from here.
+#
+# Every value you are expected to change is marked  # <-- EDIT
+# ===========================================================================
+
+# The tool point: what "move to (x, y, z)" puts there. A point in tool_link's
+# frame; for now the far end of endeffector_link's collision box, half way
+# down its height.
+tool:
+  link: endeffector_link
+  xyz: [0.28, 0.0, -0.03]       # <-- EDIT when the gripper exists
+
+# Top speed and acceleration of every joint (m, rad). Each joint moves at
+# these, all at the same time. Keep them below what the motors can do:
+# canopyag_description/config/hardware.yaml (max_motor_rpm, acceleration).
+limits:
+  z_carriage: {velocity: 0.25, acceleration: 0.5}   # <-- EDIT
+  z_crate:    {velocity: 0.25, acceleration: 0.5}   # <-- EDIT
+  joint_1:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
+  joint_2:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
+
+collision:
+  # Every collision box grows by this on every side. It covers the real robot
+  # lagging its trajectory a little, and the box corners the check skips
+  # between two samples.
+  margin: 0.02                  # <-- EDIT: m
+  # Check the path every time any point of the arm has moved this far.
+  step: 0.01                    # <-- EDIT: m
+  # Never checked against each other. The carriage and the crate are kept
+  # apart by crate.gap instead: at home they are 5 mm apart, inside margin.
+  ignore:
+    - [carriage, crate]
+
+crate:
+  # The crate rides below the carriage. follow: true sends it to `trail`
+  # below the carriage's goal with every move; false moves it only when the
+  # carriage would come closer than `gap`.
+  follow: true                  # <-- EDIT
+  trail: 0.15                   # <-- EDIT: m, carriage goal - crate goal
+  gap: 0.02                     # <-- EDIT: m, carriage - crate never less
+
+execution:
+  # Planning takes a few ms; the motion starts this long after the goal
+  # arrives, the same instant on every controller.
+  start_delay: 0.05             # <-- EDIT: s
+  # Spacing of the trajectory points sent to the controllers.
+  point_dt: 0.01                # <-- EDIT: s

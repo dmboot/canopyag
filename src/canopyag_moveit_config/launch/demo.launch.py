@@ -1,8 +1,9 @@
-"""MoveIt on mock hardware, with the scripted demo path.
+"""MoveIt on mock hardware: plan by hand in RViz.
 
-    ros2 launch canopyag_moveit_config demo.launch.py              # runs the path once
-    ros2 launch canopyag_moveit_config demo.launch.py loop:=true
-    ros2 launch canopyag_moveit_config demo.launch.py demo:=false  # just MoveIt + RViz
+    ros2 launch canopyag_moveit_config demo.launch.py
+
+The scripted demo path is canopyag_motion's (no MoveIt):
+    ros2 launch canopyag_motion demo.launch.py
 
 No Gazebo and no real axes: ros2_control runs mock_components/GenericSystem,
 which reflects every command straight back as state. MoveIt itself is
@@ -13,10 +14,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import IncludeLaunchDescription, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -57,22 +58,9 @@ def generate_launch_description():
 
     moveit = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(here, "moveit.launch.py")),
-        launch_arguments={"demo": LaunchConfiguration("demo"),
-                          "loop": LaunchConfiguration("loop"),
-                          "speed": LaunchConfiguration("speed"),
-                          "side": LaunchConfiguration("side")}.items(),
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument("demo", default_value="true",
-                              description="Run the scripted demo path."),
-        DeclareLaunchArgument("loop", default_value="false",
-                              description="Repeat the demo path until stopped."),
-        DeclareLaunchArgument("speed", default_value="1.0",
-                              description="Scale on every demo move (0..1]."),
-        DeclareLaunchArgument("side", default_value="right",
-                              description="Which side of the gantry the demo picks on, "
-                                          "seen from the front: right or left."),
         robot_state_publisher,
         control_node,
         jsb,

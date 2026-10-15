@@ -3,7 +3,7 @@
 <package format="3">
   <name>canopyag_moveit_config</name>
   <version>0.1.0</version>
-  <description>MoveIt 2 configuration for the canopy.ag gantry SCARA, plus a scripted demo path on mock hardware.</description>
+  <description>MoveIt 2 configuration for the canopy.ag gantry SCARA: plan by hand in RViz. The demo and goal-driven motion live in canopyag_motion.</description>
   <maintainer email="david.boot@hotmail.nl">David Boot</maintainer>
   <license>Apache-2.0</license>
 
