@@ -3,7 +3,7 @@
 <package format="3">
   <name>canopyag_hardware</name>
   <version>0.1.0</version>
-  <description>ros2_control SystemInterface for the canopy.ag axes: MKS SERVO57D drivers on SocketCAN, plus a simulated driver for vcan0.</description>
+  <description>ros2_control SystemInterface for the canopy.ag axes: MKS SERVO57D / SERVO42D drivers on SocketCAN, plus a simulated driver for vcan0.</description>
   <maintainer email="david.boot@hotmail.nl">David Boot</maintainer>
   <license>Apache-2.0</license>
 

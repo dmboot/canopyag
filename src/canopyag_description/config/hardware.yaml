@@ -8,7 +8,8 @@
 # Every value you are expected to change is marked  # <-- EDIT
 #
 # Per joint:
-#   mode                can     = a real MKS SERVO57D on the CAN bus
+#   mode                can     = a real MKS SERVO57D / SERVO42D on the CAN bus
+#                                 (same protocol, daisy-chained on one bus)
 #                       virtual = no motor yet: the plugin copies command to
 #                                 state (like mock hardware), no CAN traffic.
 #                                 Only `mode` and `initial_position` are read.
@@ -32,7 +33,13 @@
 # ===========================================================================
 
 hardware:
-  can_rate_hz: 100              # <-- EDIT: CAN cycle rate (bus budget: see README)
+  # One cycle sends every motor its F5 and reads its encoder, one request at a
+  # time, plus one stall poll: 2 x motors + 1 request/reply turns. Measured on
+  # can0 with 4 motors (9 turns): 12-14.5 ms, about 1.5 ms a turn, so 100 Hz
+  # never fit. 5 motors = 11 turns = about 16.5 ms: 50 Hz (20 ms) fits with
+  # room for a slow reply. If the plugin still warns "CAN cycle takes ... ms",
+  # use the rate it suggests.
+  can_rate_hz: 50               # <-- EDIT: CAN cycle rate (bus budget: see README)
   reply_timeout_ms: 50          # <-- EDIT: startup wait for one reply
   max_missed_replies: 5         # <-- EDIT: fault after reply_timeout_ms * this without a 0x31 reply
   startup_check_retries: 3      # <-- EDIT: 0x31 attempts per motor before configure fails
@@ -79,9 +86,15 @@ joints:
     acceleration: 240           # <-- EDIT: 1250 rpm/s = 10.9 rad/s^2 (joint_limits: 5)
     initial_position: 0.0       # <-- EDIT
 
-  # Gripper rotation (end_effector). No motor yet: set mode: can and fill in
-  # can_id, motor_revs_per_unit, reversed, max_motor_rpm and acceleration
-  # (see joint_1 / joint_2) once it has one.
+  # Wrist yaw (end_effector): NEMA17 on an MKS SERVO42D, daisy-chained on the
+  # same bus. Home (0) = gripper along link 2; robot_parameters.yaml limits it
+  # to +-270 deg for the cables.
   joint_3:
-    mode: virtual               # <-- EDIT
+    mode: can                   # <-- EDIT
+    can_id: 5                   # <-- EDIT
+    # 5:1 gearbox: 5 / (2 pi)
+    motor_revs_per_unit: 0.7957747154594768  # <-- EDIT
+    reversed: false             # <-- EDIT (check on the first move)
+    max_motor_rpm: 400          # <-- EDIT: 400 rpm = 8.4 rad/s at the wrist (motion.yaml: 6)
+    acceleration: 240           # <-- EDIT: 1250 rpm/s = 26 rad/s^2 (motion.yaml: 15)
     initial_position: 0.0       # <-- EDIT

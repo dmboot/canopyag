@@ -47,6 +47,12 @@ class Profile:
         """This motion, then `other` (which must start where this one stops)."""
         return Profile(self.p0, self.v0, self.phases + other.phases, other.end)
 
+    def stretched(self, k):
+        """The same path k times slower: every phase k times longer, velocity
+        / k, acceleration / k^2."""
+        return Profile(self.p0, self.v0 / k, [(d * k, a / (k * k)) for d, a in self.phases],
+                       self.end)
+
     def after(self, t0):
         """What is left of this motion from t0 on."""
         if t0 <= 0.0:

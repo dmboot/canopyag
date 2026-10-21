@@ -12,6 +12,11 @@
   Neither: canopyag_hardware/CanopyagSystem on SocketCAN. Only then is
   config/hardware.yaml loaded, and its values become <param> tags on the
   <hardware> and on each <joint>. Sim and mock output does not depend on it.
+
+  Every movable joint is in here, the wrist yaw joint_3 too (CAN ID 5 in
+  hardware.yaml). A joint with lower/upper gets them as the command's
+  min/max, which the plugin clamps every target to: for joint_3 that is the
+  cable limit. Pitch and gripper are not in the URDF, so not in here either.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 

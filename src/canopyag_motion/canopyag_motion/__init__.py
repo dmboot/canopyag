@@ -3,13 +3,14 @@ as its limits allow, all joints at once, clear of its own collision boxes.
 
     model.py     kinematics, inverse kinematics, collision boxes
     profiles.py  time-optimal motion of one joint
-    planner.py   all joints together: waits, elbow choice, crate gap
+    planner.py   all joints together: waits, elbow choice, crate gap, the
+                 wrist holding the gripper's heading
 """
 
 import yaml
 
-from .model import ARM, CRATE, JOINTS, WRIST, Model, ModelError  # noqa: F401
-from .planner import Plan, PlanError, Planner                  # noqa: F401
+from .model import ARM, CRATE, HEADING, JOINTS, WRIST, Model, ModelError  # noqa: F401
+from .planner import HEADINGS, Plan, PlanError, Planner                  # noqa: F401
 
 
 def load(robot_parameters, motion_config):
@@ -23,5 +24,6 @@ def load(robot_parameters, motion_config):
                   col.get("ignore", []))
     limits = {j: (L["velocity"], L["acceleration"]) for j, L in cfg["limits"].items()}
     planner = Planner(model, limits, gap=crate["gap"], crate_trail=crate["trail"],
-                      crate_follow=crate["follow"], check_step=col["step"])
+                      crate_follow=crate["follow"], check_step=col["step"],
+                      heading=str(cfg.get("heading", {}).get("default", "auto")))
     return model, planner, cfg

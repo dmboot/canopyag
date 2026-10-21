@@ -34,6 +34,9 @@ controller_manager:
       type: forward_command_controller/ForwardCommandController
 
 
+# joint_3 (the wrist yaw) is in here, not in a controller of its own: one
+# trajectory, one clock, so it turns exactly with joint_1 and joint_2 and the
+# gripper keeps its heading (canopyag_motion).
 arm_controller:
   ros__parameters:
     joints:
@@ -67,4 +70,5 @@ forward_position_controller:
       - z_carriage
       - joint_1
       - joint_2
+      - joint_3
     interface_name: position

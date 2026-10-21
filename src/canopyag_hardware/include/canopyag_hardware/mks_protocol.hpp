@@ -1,4 +1,4 @@
-// MKS SERVO57D CAN protocol: frame builders, reply parsers and CRC.
+// MKS SERVO57D / SERVO42D CAN protocol (the same on both): frame builders, reply parsers and CRC.
 //
 // Pure functions, no I/O and no ROS - covered by test/test_mks_protocol.cpp.
 // Reference: ~/nema_test/mks_servo.py, which has been run on the real bus.

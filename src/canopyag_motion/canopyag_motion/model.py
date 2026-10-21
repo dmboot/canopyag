@@ -1,10 +1,19 @@
 """The robot as canopyag_motion sees it: kinematics, inverse kinematics and
 collision boxes, all built from canopyag_description's robot_parameters.yaml.
 
-Every joint axis is vertical and every joint origin is a translation plus a
-turn about z, so a link's pose in the world is (x, y, z, yaw). That keeps all
-of this a few lines of numpy, and every function takes arrays: one call
-checks a whole trajectory.
+The planned chain is z_carriage -> joint_1 -> joint_2 -> joint_3 (the wrist
+yaw). Its axes are vertical and every joint origin is a translation plus a
+turn about z, so a link's pose in the world is (x, y, z, yaw). Joints after
+the wrist (a pitch, the gripper) are frozen at 0: their axes may point
+anywhere, planning sees them as part of the gripper. That keeps all of this a
+few lines of numpy, and every function takes arrays: one call checks a whole
+trajectory.
+
+The gripper points along the tool link's +x. Its world yaw, the heading, is
+joint_1 + joint_2 + joint_3 plus the fixed turns in between, so for a heading
+the wrist yaw follows from joint_1 and joint_2 (wrist_for): the inverse
+kinematics put the wrist axis at the goal minus the tip offset turned to the
+heading, and solve the two links in closed form.
 
 Collision: each link's collision_box, grown by `margin` on every side. Two
 boxes touch when their z ranges overlap and their footprints (rectangles
@@ -22,10 +31,12 @@ import numpy as np
 
 ARM = ("z_carriage", "joint_1", "joint_2")
 CRATE = "z_crate"
-# Turns the gripper about its own vertical axis. Not part of the inverse
-# kinematics: the tool point sits on its axis, so it only turns the gripper.
+# The wrist yaw: turns the gripper about a vertical axis at the end of link 2.
+# Never planned on its own: it holds the gripper at its heading (planner.py).
 WRIST = "joint_3"
 JOINTS = ARM + (CRATE, WRIST)
+# Not a joint: the gripper's world yaw, as a Plan carries it (planner.py).
+HEADING = "heading"
 
 
 class ModelError(ValueError):
@@ -46,12 +57,10 @@ class Model:
         self.joints = {}
         for name, j in params["joints"].items():
             axis = j.get("axis", [0.0, 0.0, 1.0])
-            if j["type"] != "fixed" and (abs(axis[0]) > 1e-9 or abs(axis[1]) > 1e-9):
-                raise ModelError(f"joint {name}: axis {axis} is not vertical")
             lim = j.get("limit", {})
             continuous = j["type"] == "continuous"
             self.joints[name] = dict(
-                type=j["type"], parent=j["parent"], child=j["child"],
+                type=j["type"], parent=j["parent"], child=j["child"], axis=axis,
                 origin=self._origin(name, j["xyz"], j.get("rpy", [0, 0, 0])),
                 sign=1.0 if j["type"] == "fixed" else math.copysign(1.0, axis[2]),
                 lower=-math.inf if continuous else float(lim.get("lower", -math.inf)),
@@ -71,6 +80,23 @@ class Model:
                 placed.add(self.joints[n]["child"])
                 todo.remove(n)
 
+        # Everything after the wrist is frozen at 0 (sign 0: a value never moves it).
+        self.wrist_link = self.joints[WRIST]["child"]
+        gripper = {self.wrist_link}
+        self.frozen = []
+        for n in self.order:
+            j = self.joints[n]
+            if j["parent"] in gripper:
+                gripper.add(j["child"])
+                self.frozen.append(n)
+                j["sign"] = 0.0
+        for n, j in self.joints.items():
+            a = j["axis"]
+            tilted = abs(a[0]) > 1e-9 or abs(a[1]) > 1e-9
+            if n not in self.frozen and j["type"] != "fixed" and tilted:
+                raise ModelError(f"joint {n}: axis {a} is not vertical (only joints after "
+                                 f"{WRIST} may be, they are frozen at 0)")
+
         self.boxes = {}
         for link, L in params["links"].items():
             if "collision_box" in L:
@@ -86,31 +112,51 @@ class Model:
                 link = parent[link][1]["parent"]
             return parent[link][0] if link in parent else self.root
         # (a, b, how much less the z ranges may overlap): 2 * margin on one rail.
-        self.pairs = [(a, b, 2.0 * self.margin if rail(a) == rail(b) else 0.0)
-                      for a, b in itertools.combinations(sorted(self.boxes), 2)
-                      if frozenset((a, b)) not in skip]
+        # On one rail the heights never change relative to each other, so a
+        # pair that is apart in z now always is (the gripper under link 1 and
+        # the carriage): not checked at all.
+        zero, _ = self._world_boxes({})
+        self.pairs = []
+        for a, b in itertools.combinations(sorted(self.boxes), 2):
+            if frozenset((a, b)) in skip:
+                continue
+            dz = 2.0 * self.margin if rail(a) == rail(b) else 0.0
+            if dz and abs(zero[a][2][0] - zero[b][2][0]) >= zero[a][4][2] + zero[b][4][2] - dz:
+                continue
+            self.pairs.append((a, b, dz))
 
-        # The arm: z_carriage -> joint_1 -> joint_2 -> tool_link, every one
-        # the child of the one before.
-        chain = [self.joints[n] for n in ARM]
-        if chain[0]["type"] != "prismatic" or chain[1]["parent"] != chain[0]["child"] or \
-                chain[2]["parent"] != chain[1]["child"] or chain[2]["child"] != tool_link:
-            raise ModelError("expected z_carriage -> joint_1 -> joint_2 -> " + tool_link)
+        # The arm: z_carriage -> joint_1 -> joint_2 -> joint_3, every one the
+        # child of the one before; the tool on joint_3's link or after it.
+        chain = [self.joints[n] for n in ARM + (WRIST,)]
+        if chain[0]["type"] != "prismatic" or chain[3]["type"] not in ("revolute", "continuous") \
+                or any(b["parent"] != a["child"] for a, b in zip(chain, chain[1:])):
+            raise ModelError("expected z_carriage -> joint_1 -> joint_2 -> " + WRIST)
+        if tool_link not in gripper:
+            raise ModelError(f"tool link {tool_link} is not {self.wrist_link} or after it")
         self.tool_link = tool_link
         self.tool = np.array(tool_xyz, float)
 
-        # Planar 2-link geometry for the inverse kinematics, from the pose at zero.
-        zero = self.link_poses({n: 0.0 for n in JOINTS})
+        # Planar 2-link geometry for the inverse kinematics, from the pose at zero:
+        # link 1 from joint_1 to joint_2, link 2 from joint_2 to the wrist axis.
+        zero = self.link_poses({})
         p1 = zero[chain[1]["child"]]                      # mid_link frame, joint_1 = 0
         self.j1_xy = np.array([p1[0], p1[1]])
         self.j1_yaw = float(p1[3])
-        o2 = chain[2]["origin"]
+        o2, o3 = chain[2]["origin"], chain[3]["origin"]
         self.link1 = math.hypot(o2[0], o2[1])
         self.alpha1 = math.atan2(o2[1], o2[0])
         self.j2_yaw = float(o2[3])
-        self.link2 = math.hypot(self.tool[0], self.tool[1])
-        self.alpha2 = math.atan2(self.tool[1], self.tool[0])
-        self.tool_z0 = float(self.tool_position({n: 0.0 for n in JOINTS})[2])
+        self.link2 = math.hypot(o3[0], o3[1])
+        self.alpha2 = math.atan2(o3[1], o3[0])
+        self.tool_z0 = float(self.tool_position({})[2])
+        # Heading = yaw_base + joint_1 + joint_2 + joint_3 (with the axis signs).
+        self.yaw_base = float(zero[tool_link][3])
+        # The tool point from the wrist axis, in the tool link's frame: the same
+        # at every joint value, the joints in between are frozen.
+        w, tip = zero[self.wrist_link], self.tool_position({})
+        c, s = math.cos(self.yaw_base), math.sin(self.yaw_base)
+        dx, dy = float(tip[0] - w[0]), float(tip[1] - w[1])
+        self.tip = np.array([c * dx + s * dy, -s * dx + c * dy, float(tip[2] - w[2])])
 
         # How far from its joint any part of link 1 / link 2 / the gripper
         # reaches (boxes, the tool point and everything further down the
@@ -125,9 +171,9 @@ class Model:
                 if j["parent"] == link:
                     r = max(r, math.hypot(j["origin"][0], j["origin"][1]) + reach(j["child"]))
             return r
-        self.reach2 = reach(tool_link)
+        self.reach2 = reach(chain[2]["child"])
         self.reach1 = reach(chain[1]["child"])
-        self.reach3 = reach(self.joints[WRIST]["child"])
+        self.reach3 = reach(self.wrist_link)
 
     @staticmethod
     def _origin(what, xyz, rpy):
@@ -165,17 +211,58 @@ class Model:
         return np.array([x + c * self.tool[0] - s * self.tool[1],
                          y + s * self.tool[0] + c * self.tool[1], z + self.tool[2]])
 
-    def inverse(self, point):
-        """Arm joints [z_carriage, joint_1, joint_2] that put the tool point at
-        `point` (world). Both elbow solutions, each in every equivalent turn
-        that fits the joint limits (joint_2 -pi..pi allows two at +-pi).
-        Continuous joints come back in (-pi, pi]. Empty if out of reach."""
+    def heading_of(self, j1, j2, j3):
+        """World yaw of the gripper (the tool link's +x) at these joints."""
+        s1, s2, s3 = (self.joints[j]["sign"] for j in ("joint_1", "joint_2", WRIST))
+        return self.yaw_base + s1 * np.asarray(j1) + s2 * np.asarray(j2) + s3 * np.asarray(j3)
+
+    def heading_rate(self, v1, v2, v3):
+        """How fast the heading turns at these joint velocities (rad/s)."""
+        s1, s2, s3 = (self.joints[j]["sign"] for j in ("joint_1", "joint_2", WRIST))
+        return s1 * np.asarray(v1) + s2 * np.asarray(v2) + s3 * np.asarray(v3)
+
+    def wrist_for(self, heading, j1, j2):
+        """joint_3 that turns the gripper to `heading` at joint_1, joint_2 (not
+        wrapped into its limits)."""
+        s1, s2, s3 = (self.joints[j]["sign"] for j in ("joint_1", "joint_2", WRIST))
+        j1, j2 = np.asarray(j1), np.asarray(j2)
+        return (np.asarray(heading) - self.yaw_base - s1 * j1 - s2 * j2) / s3
+
+    def wrist_motion(self, heading, j1, j2):
+        """joint_3 (position, velocity, acceleration) that holds the gripper at
+        the heading, from the (position, velocity, acceleration) of the
+        heading, joint_1 and joint_2."""
+        s1, s2, s3 = (self.joints[j]["sign"] for j in ("joint_1", "joint_2", WRIST))
+        return (self.wrist_for(heading[0], j1[0], j2[0]),
+                (heading[1] - s1 * j1[1] - s2 * j2[1]) / s3,
+                (heading[2] - s1 * j1[2] - s2 * j2[2]) / s3)
+
+    def wrist_position(self, q):
+        """World (x, y, z) of the wrist axis (joint_3's link frame)."""
+        x, y, z, _ = self.link_poses(q)[self.wrist_link]
+        return np.array([x, y, z])
+
+    def wrist_point(self, point, heading):
+        """World (x, y) where the wrist axis must be for the tool point to be at
+        `point` with the gripper at `heading`."""
+        c, s = math.cos(heading), math.sin(heading)
+        return (float(point[0]) - (c * self.tip[0] - s * self.tip[1]),
+                float(point[1]) - (s * self.tip[0] + c * self.tip[1]))
+
+    def inverse(self, point, heading, wrist_limits=True):
+        """Arm joints [z_carriage, joint_1, joint_2, joint_3] that put the tool
+        point at `point` (world) with the gripper at `heading` (world yaw).
+        Both elbow solutions, each in every equivalent turn that fits the joint
+        limits (joint_2 -pi..pi allows two at +-pi, a wide joint_3 two turns).
+        Continuous joints come back in (-pi, pi]. Empty if out of reach.
+        wrist_limits=False: joint_3 as it comes out, limits or not."""
         zj = self.joints["z_carriage"]
         zc = (float(point[2]) - self.tool_z0) / zj["sign"]
         if not zj["lower"] - 1e-9 <= zc <= zj["upper"] + 1e-9:
             return []
         zc = min(max(zc, zj["lower"]), zj["upper"])
-        dx, dy = float(point[0]) - self.j1_xy[0], float(point[1]) - self.j1_xy[1]
+        wx, wy = self.wrist_point(point, heading)
+        dx, dy = wx - self.j1_xy[0], wy - self.j1_xy[1]
         a, b = self.link1, self.link2
         c = (dx * dx + dy * dy - a * a - b * b) / (2 * a * b)
         if c > 1 + 1e-9 or c < -1 - 1e-9:
@@ -189,19 +276,29 @@ class Model:
             j2 = (bend + self.alpha1 - self.j2_yaw - self.alpha2) / s2
             for v1 in self.turns("joint_1", j1):
                 for v2 in self.turns("joint_2", j2):
-                    out.append(np.array([zc, v1, v2]))
+                    w = float(self.wrist_for(heading, v1, v2))
+                    for v3 in (self.turns(WRIST, w) if wrist_limits else [w]):
+                        out.append(np.array([zc, v1, v2, v3]))
         return out
 
     def reach_box(self, n=181):
         """(lo, hi): world corners of the box around every tool point the arm
-        reaches without touching itself, rounded out to the cm. Not every
-        point inside is reachable."""
-        (z_lo, z_hi), (c_lo, _) = self.limits("z_carriage"), self.limits(CRATE)
+        reaches without touching itself, the gripper to +y or -y, rounded out
+        to the cm. Not every point inside is reachable."""
+        (z_lo, z_hi), (c_lo, _), (w_lo, w_hi) = (self.limits(j)
+                                                 for j in ("z_carriage", CRATE, WRIST))
         j1, j2 = np.meshgrid(np.linspace(*self.limits("joint_1"), n),
                              np.linspace(*self.limits("joint_2"), n))
-        q = {"z_carriage": np.full(j1.size, (z_lo + z_hi) / 2), "joint_1": j1.ravel(),
-             "joint_2": j2.ravel(), CRATE: np.full(j1.size, c_lo)}
-        tool = self.tool_position(q)[:, ~self.collisions(q)]
+        j1, j2 = j1.ravel(), j2.ravel()
+        tools = []
+        for heading in (math.pi / 2, -math.pi / 2):
+            w = np.remainder(self.wrist_for(heading, j1, j2) + math.pi, 2 * math.pi) - math.pi
+            if not math.isinf(w_lo):
+                w = w + np.ceil((w_lo - w) / (2 * math.pi)) * 2 * math.pi
+            q = {"z_carriage": np.full(j1.size, (z_lo + z_hi) / 2), "joint_1": j1, "joint_2": j2,
+                 CRATE: np.full(j1.size, c_lo), WRIST: w}
+            tools.append(self.tool_position(q)[:, (w <= w_hi) & ~self.collisions(q)])
+        tool = np.concatenate(tools, axis=1)
         lo = np.floor(tool.min(axis=1) * 100) / 100
         hi = np.ceil(tool.max(axis=1) * 100) / 100
         lo[2], hi[2] = z_lo + self.tool_z0, z_hi + self.tool_z0
@@ -251,12 +348,21 @@ class Model:
     def _touch(A, B, dz=0.0):
         ax, ay, az, at, ah = A
         bx, by, bz, bt, bh = B
-        hit = np.abs(az - bz) < ah[2] + bh[2] - dz
         dx, dy = bx - ax, by - ay
+        # Cheap first: z ranges and the circles around the two footprints.
+        # The exact test (separating axes) only where both overlap.
+        r = math.hypot(ah[0], ah[1]) + math.hypot(bh[0], bh[1])
+        hit = (np.abs(az - bz) < ah[2] + bh[2] - dz) & (dx * dx + dy * dy < r * r)
+        i = np.flatnonzero(hit)
+        if i.size == 0:
+            return hit
+        dx, dy, at, bt = dx[i], dy[i], at[i], bt[i]
         ua = (np.cos(at), np.sin(at))
         ub = (np.cos(bt), np.sin(bt))
+        sat = np.ones(i.size, bool)
         for nx, ny in (ua, (-ua[1], ua[0]), ub, (-ub[1], ub[0])):
             ra = ah[0] * np.abs(ua[0] * nx + ua[1] * ny) + ah[1] * np.abs(-ua[1] * nx + ua[0] * ny)
             rb = bh[0] * np.abs(ub[0] * nx + ub[1] * ny) + bh[1] * np.abs(-ub[1] * nx + ub[0] * ny)
-            hit &= np.abs(dx * nx + dy * ny) < ra + rb
+            sat &= np.abs(dx * nx + dy * ny) < ra + rb
+        hit[i] = sat
         return hit

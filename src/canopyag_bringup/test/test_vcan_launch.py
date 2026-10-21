@@ -1,7 +1,8 @@
 """hardware.launch.py + canopyag_hardware against tools/mks_sim.py on vcan0.
 
-One launch per case: mks_sim.py drives CAN IDs 1 (z_carriage) and 3
-(joint_1), with at most one fault flag. The healthy cases must bring the
+One launch per case: mks_sim.py drives CAN IDs 1 (z_carriage), 3 (joint_1)
+and 5 (joint_3, the wrist yaw: a SERVO42D on the real robot, the same
+protocol), with at most one fault flag. The healthy cases must bring the
 controllers up as on the real robot and follow forward_position_controller
 commands; the fault cases must end with the hardware finalized, a FAULT
 message naming the joint, and an F7 seen on the bus for every motor.
@@ -40,9 +41,9 @@ os.environ["ROS_DOMAIN_ID"] = os.environ.get("CANOPYAG_TEST_DOMAIN_ID", "77")
 
 IFACE = "vcan0"
 HERE = Path(__file__).resolve().parent
-FORWARD_JOINTS = ["z_carriage", "joint_1", "joint_2"]
-TARGET = [0.05, 0.4, 0.3]     # z_carriage m, joint_1..2 rad
-MOTOR_IDS = (1, 3)
+FORWARD_JOINTS = ["z_carriage", "joint_1", "joint_2", "joint_3"]
+TARGET = [0.05, 0.4, 0.3, -0.6]     # z_carriage m, joint_1..3 rad
+MOTOR_IDS = (1, 3, 5)
 
 # case -> (mks_sim.py flags, expected outcome, text the FAULT/FATAL log must contain)
 CASES = {
@@ -95,7 +96,9 @@ class Sniffer:
 @launch_testing.parametrize("case", list(CASES))
 def generate_test_description(case):
     if not vcan_up():
-        return LaunchDescription([launch_testing.actions.ReadyToTest()]), {"sniffer": None}
+        # Something has to run, or launch_testing ends before the test can skip.
+        return LaunchDescription([ExecuteProcess(cmd=["sleep", "30"]),
+                                  launch_testing.actions.ReadyToTest()]), {"sniffer": None}
 
     sniffer = Sniffer()
     sim = ExecuteProcess(
@@ -242,6 +245,11 @@ class TestVcan(unittest.TestCase):
         f5 = [d for i, d in sniffer.frames if i == 3 and d[0] == 0xF5 and len(d) == 8]
         last = int.from_bytes(f5[-1][4:7], "big", signed=True)
         self.assertLess(last, 12345, "reversed joint moved the motor the wrong way")
+        # joint_3 (CAN ID 5, not reversed) to -0.6 rad: negative motor counts too
+        f5 = [d for i, d in sniffer.frames if i == 5 and d[0] == 0xF5 and len(d) == 8]
+        self.assertTrue(f5, "the wrist yaw (CAN ID 5) got no F5")
+        self.assertLess(int.from_bytes(f5[-1][4:7], "big", signed=True), 12345,
+                        "joint_3 moved the motor the wrong way")
         # One request on the bus at a time: the real drivers produce bit errors
         # when two of them answer at once. mks_sim.py numbers every request that
         # arrives while another driver still owes a reply. Streaming the old

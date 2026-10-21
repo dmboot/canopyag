@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-mks_sim.py  --  simulated MKS SERVO57D drivers on a SocketCAN interface
+mks_sim.py  --  simulated MKS SERVO57D / SERVO42D drivers on SocketCAN
 =======================================================================
 
 Stand-in for the real bus, so canopyag_hardware can be tested with no motor
 attached. Python standard library only.
 
     python3 mks_sim.py --ids 1 3                       # two healthy drivers on vcan0
+    python3 mks_sim.py --ids 1 2 3 4 5                 # the whole robot (hardware.yaml)
     python3 mks_sim.py --ids 1 3 --drop 3 --fault-after 5
     python3 mks_sim.py --ids 1 3 --retarget reject     # driver refuses F5 mid-move
+
+The SERVO42D (NEMA17, the wrist yaw) speaks the same CAN protocol as the
+SERVO57D, so one simulated driver stands in for either.
 
 Every command the plugin uses is answered with a correct CRC (see the table
 in the README): F3 F4 F5 F6 F7 31 32 3A 3D 3E 92. Motion follows the MKS

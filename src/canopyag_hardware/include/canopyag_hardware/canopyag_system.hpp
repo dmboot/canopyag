@@ -1,5 +1,5 @@
 // canopyag_hardware/CanopyagSystem: ros2_control SystemInterface for the MKS
-// SERVO57D drivers on SocketCAN (ROS 2 Humble API).
+// SERVO57D / SERVO42D drivers on SocketCAN (ROS 2 Humble API).
 //
 // Joints come in two modes (config/hardware.yaml in canopyag_description):
 //   can     - a real driver. The CAN thread streams its target as an absolute

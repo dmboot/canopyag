@@ -6,19 +6,23 @@
 
 Goals:
   move_to     (canopyag_interfaces/action/MoveTo)   a point or joint values,
-              with feedback and a result
+              or only the crate, with feedback and a result
   goal_point  (geometry_msgs/PointStamped)          a point, fire and forget -
               what RViz's "Publish Point" tool sends
 
 Plans with canopyag_motion.Planner (all joints at once, clear of the robot's
-own collision boxes, crate kept under the carriage) and sends the trajectory
-straight to arm_controller and crate_controller, both starting at the same
-instant. A new goal replaces the running one: the new motion starts from
-where the old one is at that moment, at its speed. Cancelling the action
-brakes the robot to a stop.
+own collision boxes, crate kept under the carriage, the gripper pointing
+along world +y or -y the whole way: joint_3 follows from the heading) and
+sends the trajectory straight to arm_controller (z_carriage, joint_1,
+joint_2, joint_3: one controller, so the wrist is time-synced with the arm)
+and crate_controller, both starting at the same instant. A new goal
+replaces the running one: the new motion starts from where the old one is
+at that moment, at its speed. Cancelling the action brakes the robot to a
+stop.
 
-Publishes goal_markers (visualization_msgs/MarkerArray): the goal and the
-tool point's path, in the world frame.
+Publishes goal_markers (visualization_msgs/MarkerArray): the goal, the tool
+point's path and an arrow for the gripper at the goal (from joint_3's axis
+to the tip), in the world frame.
 """
 
 import os
@@ -48,7 +52,10 @@ from tf2_ros import Buffer, TransformListener
 import canopyag_motion
 from canopyag_motion import ARM, CRATE, JOINTS, WRIST, PlanError
 
+# joint_3 is in arm_controller: its trajectory points are the same instants
+# as the arm's, which is what keeps the gripper at its heading.
 CONTROLLERS = {"arm_controller": list(ARM) + [WRIST], "crate_controller": [CRATE]}
+HEADING_NAME = {0: "default", 1: "+y", -1: "-y"}
 
 
 class Motion:
@@ -112,11 +119,15 @@ class MotionServer(Node):
                      callback_group=group)
 
         lo, hi = self.model.limits("z_carriage")
+        w_lo, w_hi = self.model.limits(WRIST)
         self.get_logger().info(
-            f"ready: tool point {cfg['tool']['xyz']} on {cfg['tool']['link']}, reaches "
+            f"ready: tool point {cfg['tool']['xyz']} on {cfg['tool']['link']} "
+            f"({np.hypot(*self.model.tip[:2]):.3f} m from {WRIST}'s axis), the wrist axis reaches "
             f"{abs(self.model.link1 - self.model.link2):.2f}..{self.model.link1 + self.model.link2:.2f}"
             f" m around joint_1 at ({self.model.j1_xy[0]:.3f}, {self.model.j1_xy[1]:.3f}), z "
-            f"{lo + self.model.tool_z0:.3f}..{hi + self.model.tool_z0:.3f} m")
+            f"{lo + self.model.tool_z0:.3f}..{hi + self.model.tool_z0:.3f} m; gripper to +y / -y "
+            f"(default {cfg.get('heading', {}).get('default', 'auto')}), {WRIST} "
+            f"{np.degrees(w_lo):.0f}..{np.degrees(w_hi):.0f} deg")
 
     # ------------------------------------------------------------------ inputs
 
@@ -128,7 +139,7 @@ class MotionServer(Node):
     def on_goal_point(self, msg):
         try:
             p = self.to_frame(msg)
-            self.start("point", np.array([p.x, p.y, p.z]), 1.0)
+            self.start("point", np.array([p.x, p.y, p.z]), 1.0, 0)
         except (PlanError, RuntimeError) as e:
             self.get_logger().error(f"goal_point: {e}")
 
@@ -146,10 +157,17 @@ class MotionServer(Node):
         result = MoveTo.Result()
         speed = req.speed if req.speed > 0.0 else 1.0
         try:
-            if len(req.joints):
-                motion = self.start("joints", np.array(req.joints, float), speed)
+            if len(req.crate) > 1 or (req.crate_only and not len(req.crate)):
+                raise PlanError("crate is empty or one z_crate value (crate_only needs one)")
+            crate = float(req.crate[0]) if len(req.crate) else None
+            if req.crate_only:
+                motion = self.start("crate", crate, speed, req.heading)
+            elif len(req.joints):
+                motion = self.start("joints", np.array(req.joints, float), speed, req.heading,
+                                    crate)
             else:
-                motion = self.start("point", np.array([req.point.x, req.point.y, req.point.z]), speed)
+                motion = self.start("point", np.array([req.point.x, req.point.y, req.point.z]),
+                                    speed, req.heading, crate)
         except (PlanError, RuntimeError) as e:
             result.message = str(e)
             handle.abort()
@@ -187,8 +205,20 @@ class MotionServer(Node):
             raise RuntimeError(f"no /joint_states for {', '.join(missing)} yet")
         return {j: (self.measured[j], 0.0) for j in JOINTS}
 
-    def start(self, kind, goal, speed):
-        """Plan and send. Raises PlanError (the running motion goes on)."""
+    def arm_goal(self, start):
+        """[z_carriage, joint_1, joint_2, joint_3] the arm is on its way to:
+        the running motion's goal, or where it is (inside the limits: a
+        measured home can read a hair below 0)."""
+        cur = self.current
+        if cur is not None and not cur.done.is_set():
+            return np.array(cur.plan.goal, float)
+        return np.array([min(max(start[j][0], self.model.limits(j)[0]), self.model.limits(j)[1])
+                         for j in list(ARM) + [WRIST]])
+
+    def start(self, kind, goal, speed, heading, crate=None):
+        """Plan and send: kind "point", "joints", or "crate" (goal is z_crate;
+        the arm carries on to arm_goal()). Raises PlanError (the running
+        motion goes on)."""
         # Before the clock starts: right after launch a controller may still
         # be coming up.
         for name, client in self.jtc.items():
@@ -203,9 +233,12 @@ class MotionServer(Node):
                 start = self.state_at(t0)
                 tic = time.monotonic()
                 if kind == "point":
-                    plan = self.planner.to_point(start, goal, speed)
+                    plan = self.planner.to_point(start, goal, speed, heading, crate)
+                elif kind == "joints":
+                    plan = self.planner.to_joints(start, goal, speed, heading, crate)
                 else:
-                    plan = self.planner.to_joints(start, goal, speed)
+                    plan = self.planner.to_joints(start, self.arm_goal(start), speed,
+                                                  crate=goal)
                 took = time.monotonic() - tic
                 if not moving:
                     # From rest the start time does not change the plan.
@@ -218,8 +251,14 @@ class MotionServer(Node):
                 lead = 1.5 * took + self.start_delay
             else:
                 raise PlanError(f"planning takes too long ({took:.2f} s) to join the running motion")
-            what = (f"({goal[0]:.3f}, {goal[1]:.3f}, {goal[2]:.3f})" if kind == "point" else
-                    f"joints ({', '.join(f'{v:.3f}' for v in goal)})")
+            if kind == "crate":
+                what = f"crate {goal:.3f} m"
+            else:
+                what = (f"({goal[0]:.3f}, {goal[1]:.3f}, {goal[2]:.3f})" if kind == "point" else
+                        f"joints ({', '.join(f'{v:.3f}' for v in goal)})")
+                what += f" heading {HEADING_NAME.get(heading, heading)}"
+                if crate is not None:
+                    what += f", crate {crate:.3f} m"
             return self.send(plan, t0, f"{what} [planned in {1000 * took:.0f} ms]",
                              goal if kind == "point" else None)
 
@@ -240,8 +279,8 @@ class MotionServer(Node):
         notes = f" ({'; '.join(plan.notes)})" if plan.notes else ""
         self.get_logger().info(
             f"{what}: joints ({plan.goal[0]:.3f} m, {np.degrees(plan.goal[1]):.1f} deg, "
-            f"{np.degrees(plan.goal[2]):.1f} deg, {np.degrees(plan.goal[3]):.1f} deg) "
-            f"in {plan.duration:.2f} s{notes}")
+            f"{np.degrees(plan.goal[2]):.1f} deg, {np.degrees(plan.goal[3]):.1f} deg), crate "
+            f"{plan.profiles[CRATE].end:.3f} m in {plan.duration:.2f} s{notes}")
         self.publish_markers(plan, point)
         if plan.duration < 1e-6:
             motion.finish(True, "already there")
@@ -289,7 +328,8 @@ class MotionServer(Node):
     def publish_markers(self, plan, point):
         t = np.linspace(0.0, plan.duration, 60)
         s = plan.sample(t)
-        tool = self.model.tool_position({j: s[j][0] for j in JOINTS})
+        q = {j: s[j][0] for j in JOINTS}
+        tool = self.model.tool_position(q)
         path = Marker(type=Marker.LINE_STRIP, ns="tool_path", id=0, action=Marker.ADD)
         path.scale.x = 0.005
         path.color.r, path.color.g, path.color.b, path.color.a = 0.1, 0.6, 1.0, 1.0
@@ -300,7 +340,15 @@ class MotionServer(Node):
         goal.pose.orientation.w = 1.0
         goal.scale.x = goal.scale.y = goal.scale.z = 0.03
         goal.color.r, goal.color.g, goal.color.b, goal.color.a = 1.0, 0.4, 0.0, 1.0
-        msgs = MarkerArray(markers=[path, goal])
+        # The gripper at the goal: joint_3's axis -> the tip, at the tip's height.
+        arrow = Marker(type=Marker.ARROW, ns="gripper_heading", id=0, action=Marker.ADD)
+        axis = self.model.wrist_position({j: v[-1] for j, v in q.items()})
+        arrow.points = [Point(x=float(axis[0]), y=float(axis[1]), z=float(tool[2, -1])),
+                        Point(x=float(tool[0, -1]), y=float(tool[1, -1]), z=float(tool[2, -1]))]
+        arrow.pose.orientation.w = 1.0
+        arrow.scale.x, arrow.scale.y, arrow.scale.z = 0.01, 0.025, 0.04   # shaft, head width, head
+        arrow.color.r, arrow.color.g, arrow.color.b, arrow.color.a = 1.0, 0.4, 0.0, 0.8
+        msgs = MarkerArray(markers=[path, goal, arrow])
         for m in msgs.markers:
             m.header.frame_id = self.frame
             m.header.stamp = self.get_clock().now().to_msg()

@@ -7,10 +7,11 @@
 
 One slider per axis, limited to the box around everything the tool can reach
 (worked out from robot_parameters.yaml and motion.yaml, like
-motion_server.py). While you pick, the point is planned from where the robot
-is now, the same way motion_server.py will: the window says whether it can
-get there, with which joints and how fast, and RViz shows it on goal_preview
-(green: reachable, with the path; red: not).
+motion_server.py), and where the gripper points: auto (motion.yaml's
+default, normally the side of the goal), +y or -y. While you pick, the point
+is planned from where the robot is now, the same way motion_server.py will:
+the window says whether it can get there, with which joints and how fast,
+and RViz shows it on goal_preview (green: reachable, with the path; red: not).
 
   Go      send the point to motion_server.py (the move_to action)
   Stop    cancel: the robot brakes to a stop
@@ -18,6 +19,10 @@ get there, with which joints and how fast, and RViz shows it on goal_preview
   Rest    the arm to REST
   Send on release   every slider release / typed value is a Go: new goals
                     take over from the running motion
+
+The crate slider is separate from the point: on release (or a typed value)
+it sends only the crate there, the arm carries on. It has to stay
+motion.yaml crate.gap below the carriage.
 """
 
 import math
@@ -26,6 +31,7 @@ import random
 import signal
 import sys
 import threading
+import time
 
 import numpy as np
 import rclpy
@@ -33,9 +39,9 @@ from ament_index_python.packages import get_package_share_directory
 from canopyag_interfaces.action import MoveTo
 from geometry_msgs.msg import Point
 from python_qt_binding.QtCore import QObject, Qt, QTimer, Signal
-from python_qt_binding.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QGridLayout,
-                                         QHBoxLayout, QLabel, QPushButton, QSlider,
-                                         QVBoxLayout, QWidget)
+from python_qt_binding.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
+                                         QGridLayout, QHBoxLayout, QLabel, QPushButton,
+                                         QSlider, QVBoxLayout, QWidget)
 from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
@@ -44,7 +50,7 @@ from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker, MarkerArray
 
 import canopyag_motion
-from canopyag_motion import JOINTS, PlanError
+from canopyag_motion import CRATE, JOINTS, WRIST, PlanError
 
 REST = [0.05, 0.0, 0.0]    # z_carriage, joint_1, joint_2 (as demo.py)
 GREEN, RED, GREY = "#2a9d3a", "#c0392b", "#777777"
@@ -80,15 +86,20 @@ class PanelNode(Node):
             return None
         return {j: (m[j], 0.0) for j in JOINTS}
 
-    def plan(self, point, speed=1.0):
+    def reachable(self, point, heading=0):
+        """Within reach (joint limits, not collisions or the way there)."""
+        psi = self.planner.heading(heading, point[1], self.start_state())
+        return bool(self.model.inverse(point, psi))
+
+    def plan(self, point, speed=1.0, heading=0):
         """(Plan or None, message): what motion_server.py would do from here."""
         start = self.start_state()
         if start is None:
-            if self.model.inverse(point):
+            if self.reachable(point, heading):
                 return None, "within reach (no /joint_states yet: not planned)"
             return None, "out of reach"
         try:
-            return self.planner.to_point(start, point, speed), ""
+            return self.planner.to_point(start, point, speed, heading), ""
         except PlanError as e:
             return None, str(e)
 
@@ -189,6 +200,18 @@ class Panel(QWidget):
         grid.addWidget(QLabel("<b>speed</b>"), 3, 0)
         grid.addWidget(self.speed, 3, 1)
         grid.addWidget(speed_label, 3, 2)
+        self.heading = QComboBox()
+        for text, value in (("auto (side of the goal)", MoveTo.Goal.HEADING_DEFAULT),
+                            ("+y", MoveTo.Goal.HEADING_POS_Y), ("-y", MoveTo.Goal.HEADING_NEG_Y)):
+            self.heading.addItem(text, value)
+        self.heading.currentIndexChanged.connect(self.on_change)
+        grid.addWidget(QLabel("<b>gripper to</b>"), 4, 0)
+        grid.addWidget(self.heading, 4, 1)
+        # Not part of the point: moves only the crate, as soon as it is let go.
+        self.crate = Axis(grid, 5, "crate", *node.model.limits(CRATE), lambda: None,
+                          self.send_crate)
+        self.crate_synced = False
+        self.crate_sent = -math.inf     # time.monotonic() of the last crate goal
         grid.setColumnStretch(1, 1)
 
         buttons = QHBoxLayout()
@@ -246,7 +269,8 @@ class Panel(QWidget):
         self.robot_label.setText(
             f"robot: tool at ({tool[0]:.3f}, {tool[1]:.3f}, {tool[2]:.3f}), joints "
             f"{q['z_carriage']:.3f} m, {math.degrees(q['joint_1']):.1f}°, "
-            f"{math.degrees(q['joint_2']):.1f}°")
+            f"{math.degrees(q['joint_2']):.1f}°, {math.degrees(q[WRIST]):.1f}°, "
+            f"crate {q[CRATE]:.3f} m")
         if not self.touched:
             # Start where the robot is.
             for axis, v in zip(self.axes, tool):
@@ -254,6 +278,15 @@ class Panel(QWidget):
             self.touched = True
         # The robot came to rest somewhere else: the preview starts from there now.
         at_rest = self.last_q is not None and moved(self.last_q, q) < 1e-4
+        # The crate slider shows where the crate is, once it stands still
+        # (an arm move may have pushed it down, a goal been refused), unless
+        # it is being moved or a crate goal has only just gone out.
+        crate_busy = (self.crate.slider.isSliderDown() or self.crate.spin.hasFocus() or
+                      time.monotonic() - self.crate_sent < 0.5)
+        if not self.crate_synced or (at_rest and not crate_busy and
+                                     abs(self.crate.value() - q[CRATE]) > 1e-3):
+            self.crate.set_value(q[CRATE])
+            self.crate_synced = True
         if at_rest and self.preview_q is not None and moved(self.preview_q, q) > 1e-3:
             self.preview()
         self.last_q = q
@@ -262,7 +295,7 @@ class Panel(QWidget):
         p = self.point()
         start = self.node.start_state()
         self.preview_q = None if start is None else {j: v for j, (v, _) in start.items()}
-        plan, why = self.node.plan(p, self.speed.value() / 100.0)
+        plan, why = self.node.plan(p, self.speed.value() / 100.0, self.heading.currentData())
         reachable = plan is not None or why.startswith("within reach")
         self.node.publish_preview(p, plan, reachable)
         if plan is None:
@@ -272,7 +305,8 @@ class Panel(QWidget):
         notes = f" ({', '.join(plan.notes)})" if plan.notes else ""
         self.preview_label.setText(
             f"<span style='color:{GREEN}'>reachable</span>: joints {plan.goal[0]:.3f} m, "
-            f"{math.degrees(plan.goal[1]):.1f}°, {math.degrees(plan.goal[2]):.1f}°; "
+            f"{math.degrees(plan.goal[1]):.1f}°, {math.degrees(plan.goal[2]):.1f}°, "
+            f"{math.degrees(plan.goal[3]):.1f}°; "
             f"{plan.duration:.2f} s from where the robot is now{notes}")
 
     # ------------------------------------------------------------------ actions
@@ -285,12 +319,18 @@ class Panel(QWidget):
     def rest(self):
         self.send(MoveTo.Goal(joints=[float(v) for v in REST]), "rest")
 
+    def send_crate(self):
+        v = self.crate.value()
+        self.crate_sent = time.monotonic()
+        self.send(MoveTo.Goal(crate=[v], crate_only=True), f"crate to {v:.3f} m")
+
     def send(self, goal, what):
         if not self.node.client.server_is_ready():
             self.show_status("no move_to action server: is motion_server.py running? "
                              "(ros2 launch canopyag_motion motion.launch.py)", RED)
             return
         goal.speed = self.speed.value() / 100.0
+        goal.heading = self.heading.currentData()
         self.show_status(f"{what}: sent", GREY)
         future = self.node.client.send_goal_async(
             goal, feedback_callback=lambda fb: self.bridge.status.emit(
@@ -323,13 +363,13 @@ class Panel(QWidget):
         """A point anywhere in the box that motion_server.py can plan to."""
         lo = np.array([a.spin.minimum() for a in self.axes])
         hi = np.array([a.spin.maximum() for a in self.axes])
-        model = self.node.model
         for _ in range(500):
             p = lo + (hi - lo) * np.array([random.random() for _ in range(3)])
             # Cheap check first: within reach. Planning is the slow part.
-            if not model.inverse(p):
+            heading = self.heading.currentData()
+            if not self.node.reachable(p, heading):
                 continue
-            plan, _ = self.node.plan(p)
+            plan, _ = self.node.plan(p, 1.0, heading)
             if plan is not None or self.node.start_state() is None:
                 for axis, v in zip(self.axes, p):
                     axis.set_value(round(float(v), 3))

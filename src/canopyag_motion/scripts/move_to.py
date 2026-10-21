@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Send the robot somewhere and wait until it is there.
 
-    ros2 run canopyag_motion move_to.py 0.45 0.55 0.5             # tool point, world, m
+    ros2 run canopyag_motion move_to.py 0.45 0.55 0.5             # gripper tip, world, m
     ros2 run canopyag_motion move_to.py 0.45 0.55 0.5 --speed 0.3
+    ros2 run canopyag_motion move_to.py 0.45 0.1 0.5 --heading=-y  # gripper to -y (default: auto)
     ros2 run canopyag_motion move_to.py --joints 0.3 60 15         # z_carriage m, joint_1/2 deg
-    ros2 run canopyag_motion move_to.py --joints 0.3 60 15 90      # + joint_3 (gripper) deg
+    ros2 run canopyag_motion move_to.py --joints 0.3 60 15 90      # + joint_3 (wrist yaw) deg
     ros2 run canopyag_motion move_to.py --joints 0.3 1.05 0.26 --rad
+
+The gripper points along world +y or -y the whole way: --heading +y / -y,
+or auto (motion.yaml heading.default; normally the side of joint_1 the goal
+is on). Write -y as --heading=-y, or argparse takes it for an option.
 
 Needs motion_server.py running (canopyag_motion motion.launch.py). Ctrl+C
 cancels the goal: the robot brakes to a stop.
@@ -22,6 +27,16 @@ from rclpy.action import ActionClient
 from rclpy.signals import SignalHandlerOptions
 
 
+HEADING = {"auto": 0, "0": 0, "default": 0, "+y": 1, "y": 1, "1": 1, "+1": 1,
+           "-y": -1, "-1": -1}
+
+
+def heading(text):
+    if text not in HEADING:
+        raise argparse.ArgumentTypeError("auto, +y or -y")
+    return HEADING[text]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -31,12 +46,14 @@ def main():
     ap.add_argument("--joints", action="store_true", help="the values are joints, not a point")
     ap.add_argument("--rad", action="store_true", help="with --joints: radians, not degrees")
     ap.add_argument("--speed", type=float, default=1.0, help="0..1 of the limits (default 1)")
+    ap.add_argument("--heading", type=heading, default=0, metavar="{auto,+y,-y}",
+                    help="where the gripper points (default auto; write --heading=-y)")
     args = ap.parse_args(rclpy.utilities.remove_ros_args(sys.argv)[1:])
 
     if len(args.values) != 3 and not (args.joints and len(args.values) == 4):
         ap.error("give x y z, or --joints z_carriage joint_1 joint_2 [joint_3]")
 
-    goal = MoveTo.Goal(speed=args.speed)
+    goal = MoveTo.Goal(speed=args.speed, heading=args.heading)
     if args.joints:
         z, *angles = args.values
         if not args.rad:

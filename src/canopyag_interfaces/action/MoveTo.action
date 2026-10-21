@@ -1,12 +1,27 @@
 # Move the robot to a goal as fast as its limits allow (canopyag_motion).
 #
-# Goal: the tool point to `point` (world frame, m) - or, when `joints` is not
-# empty, the arm to [z_carriage (m), joint_1 (rad), joint_2 (rad)], optionally
-# followed by joint_3 (rad, the gripper). Without it the gripper stays put.
+# Goal: the tool point (the gripper tip) to `point` (world frame, m) - or,
+# when `joints` is not empty, the arm to [z_carriage (m), joint_1 (rad),
+# joint_2 (rad)], optionally followed by joint_3 (rad, the wrist yaw).
+# The gripper points along world +y or -y the whole way (`heading`); joint_3
+# follows from that, unless a joint goal gives it.
 geometry_msgs/Point point
 float64[] joints
 # 0..1: scales every velocity and acceleration limit. 0 means 1 (full speed).
 float64 speed
+# Which way the gripper points: HEADING_DEFAULT (motion.yaml heading.default,
+# normally auto: the side of joint_1's axis the goal is on), +y or -y.
+int8 HEADING_DEFAULT=0
+int8 HEADING_POS_Y=1
+int8 HEADING_NEG_Y=-1
+int8 heading
+# z_crate (m). Empty: the crate stays where it is (moved down only if the
+# carriage would come closer than motion.yaml crate.gap). One value: the
+# crate goes there; it must stay crate.gap below the carriage's goal.
+float64[] crate
+# true: only the crate moves (to `crate`); the arm carries on to wherever it
+# was going. `point` and `joints` are not used.
+bool crate_only
 ---
 bool success
 string message

@@ -175,11 +175,19 @@ joints:
     limit: {effort: 50.0, velocity: 3.0, lower: -3.1416, upper: 3.1416}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_3:
-    type: continuous
+    note: |-
+      Wrist yaw: NEMA17 on an MKS SERVO42D, 5:1. The export has no limits
+      (continuous); lower/upper are set by hand and keep it revolute on a
+      re-import. The cables to the pitch and gripper motors wind up: set
+      them to how far those cables really allow from home (gripper along
+      link 2). canopyag_motion needs at least -pi..pi to point the gripper
+      to +y or -y everywhere; 1.5 turns lets the demo fold link 2 under link 1
+      without a full turn of the gripper.
+    type: revolute
     parent: endeffector_link
     child: end_effector
     xyz: [0.25484, 0.0, -0.0026]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 1.5}
+    limit: {effort: 50.0, velocity: 6.0, lower: -4.7124, upper: 4.7124}
     dynamics: {damping: 0.0, friction: 0.0}
