@@ -3,6 +3,9 @@
 
     python3 scripts/import_solidworks_urdf.py <export>/urdf/urdf.urdf
 
+Point it at the urdf inside the export folder: the STLs are found in
+<export>/meshes next to it. A loose copy of the .urdf finds no meshes.
+
 Copies the STLs into meshes/visual/ and rewrites config/robot_parameters.yaml
 from the export's links, joints, origins, axes, limits and inertials.
 
@@ -38,7 +41,7 @@ PRESERVE = {
 }
 
 # sw_urdf_exporter leaves effort/velocity at 0 unless you fill them in in the
-# exporter dialog. A 0 limit means "cannot move" to Gazebo and to MoveIt, so
+# exporter dialog. A 0 limit means "cannot move" to Gazebo and the controllers, so
 # substitute something usable and say so.
 FALLBACK_EFFORT = {"prismatic": 200.0, "revolute": 50.0, "continuous": 50.0}
 FALLBACK_VELOCITY = {"prismatic": 0.25, "revolute": 1.5, "continuous": 1.5}
@@ -52,6 +55,14 @@ def sanitize(name):
     """'joint z1' -> 'joint_z1'. Spaces in joint names are legal URDF but they
     break every ros2 control / ros2 param command line you will ever type."""
     return re.sub(r"[^a-z0-9_]+", "_", name.strip().lower()).strip("_")
+
+
+def mesh_name(filename):
+    """'package://x/meshes/end effector.STL' -> 'end_effector.stl'. A space in
+    a package:// URI does not resolve everywhere, so meshes get sanitized names
+    too."""
+    path = Path(filename)
+    return sanitize(path.stem) + path.suffix.lower()
 
 
 def triplet(elem, attr, default=(0.0, 0.0, 0.0)):
@@ -70,7 +81,7 @@ def parse_export(urdf_path):
 
         mesh = le.find("./visual/geometry/mesh")
         if mesh is not None:
-            entry["mesh"] = Path(mesh.get("filename")).name.lower()
+            entry["mesh"] = mesh_name(mesh.get("filename"))
             entry["visual_xyz"] = triplet(le.find("./visual/origin"), "xyz")
             entry["visual_rpy"] = triplet(le.find("./visual/origin"), "rpy")
 
@@ -251,7 +262,7 @@ def emit(name, root, mount, meshes, materials, links, joints, counterweights, no
         f"  visual_dir: {meshes['visual_dir']}",
         f"  collision_dir: {meshes['collision_dir']}",
         f"  scale: {vec(meshes['scale'])}",
-        "  # false -> collision reuses the visual mesh (fine for RViz and MoveIt).",
+        "  # false -> collision reuses the visual mesh (fine for RViz).",
         "  # true  -> collision uses collision_dir, which must hold decimated copies.",
         "  #          Do that before running Gazebo; raw exports are ~25k triangles",
         "  #          a link and the physics step will crawl.",
@@ -406,9 +417,9 @@ def main():
         dst_dir.mkdir(parents=True, exist_ok=True)
         wanted = {L["mesh"] for L in links.values() if "mesh" in L}
         for f in src_dir.iterdir():
-            if f.name.lower() in wanted:
-                shutil.copyfile(f, dst_dir / f.name.lower())
-                copied.append(f.name.lower())
+            if mesh_name(f.name) in wanted:
+                shutil.copyfile(f, dst_dir / mesh_name(f.name))
+                copied.append(mesh_name(f.name))
         for stale in dst_dir.iterdir():
             if stale.name not in wanted:
                 notes.append(f"meshes/visual/{stale.name} is no longer referenced")

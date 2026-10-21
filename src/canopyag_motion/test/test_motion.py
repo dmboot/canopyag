@@ -40,8 +40,9 @@ def planner(loaded):
     return loaded[1]
 
 
-def rest(z=0.05, j1=0.0, j2=0.0, crate=0.0):
-    return {"z_carriage": (z, 0.0), "joint_1": (j1, 0.0), "joint_2": (j2, 0.0), "z_crate": (crate, 0.0)}
+def rest(z=0.05, j1=0.0, j2=0.0, crate=0.0, j3=0.0):
+    return {"z_carriage": (z, 0.0), "joint_1": (j1, 0.0), "joint_2": (j2, 0.0), "z_crate": (crate, 0.0),
+            "joint_3": (j3, 0.0)}
 
 
 def check_plan(model, planner, plan, start):
@@ -58,7 +59,7 @@ def check_plan(model, planner, plan, start):
         assert abs(v[-1]) < 1e-9, j
         lo, hi = model.limits(j)
         assert np.all(p >= lo - 1e-6) and np.all(p <= hi + 1e-6), j
-    for j, g in zip(("z_carriage", "joint_1", "joint_2"), plan.goal):
+    for j, g in zip(("z_carriage", "joint_1", "joint_2", "joint_3"), plan.goal):
         assert abs(s[j][0][-1] - g) < 1e-9, j
     assert not model.collisions({j: s[j][0] for j in JOINTS}).any()
     gap = s["z_carriage"][0] - s["z_crate"][0]
@@ -72,7 +73,7 @@ def test_inverse_hits_the_point(model):
     rng = np.random.default_rng(1)
     hit = 0
     for _ in range(300):
-        p = np.array([rng.uniform(-0.5, 0.9), rng.uniform(-0.7, 0.7), rng.uniform(0.3, 1.4)])
+        p = np.array([rng.uniform(-0.5, 0.9), rng.uniform(-0.7, 0.7), rng.uniform(0.2, 0.75)])
         for q in model.inverse(p):
             hit += 1
             got = model.tool_position(dict(zip(("z_carriage", "joint_1", "joint_2"), q)))
@@ -89,26 +90,60 @@ def test_out_of_reach(model):
     assert model.inverse([0.5, 0.5, 5.0]) == []
 
 
-def test_joint_2_zero_has_both_turns(model):
-    """joint_2 0..2 pi: arm straight out is joint_2 = 0 and = 2 pi."""
-    p = model.tool_position({"z_carriage": 0.5, "joint_1": 0.3, "joint_2": 0.0})
+def test_reach_box(model):
+    lo, hi = model.reach_box()
+    assert np.all(lo < hi)
+    # Every point inverse() finds a free solution for lies inside the box.
+    rng = np.random.default_rng(0)
+    for p in lo - 0.1 + (hi - lo + 0.2) * rng.random((300, 3)):
+        free = [q for q in model.inverse(p)
+                if not model.colliding_pairs({"z_carriage": q[0], "joint_1": q[1],
+                                              "joint_2": q[2], "z_crate": 0.0})]
+        if free:
+            assert np.all(p >= lo - 0.01) and np.all(p <= hi + 0.01), p
+
+
+def test_joint_2_folded_has_both_turns(model):
+    """joint_2 -pi..pi: link 2 folded under link 1 is joint_2 = -pi and = pi."""
+    p = model.tool_position({"z_carriage": 0.3, "joint_1": 0.3, "joint_2": math.pi})
     j2 = sorted(round(q[2], 6) for q in model.inverse(p))
-    assert j2[0] == 0.0 and abs(j2[-1] - 2 * math.pi) < 1e-3
+    assert abs(j2[0] + math.pi) < 1e-3 and abs(j2[-1] - math.pi) < 1e-3
+
+
+def test_joint_3_does_not_move_the_tool_point(model):
+    """The tool point is on joint_3's axis: turning the gripper only turns it."""
+    q = {"z_carriage": 0.2, "joint_1": 0.4, "joint_2": -0.7}
+    p = model.tool_position(q)
+    for j3 in (-2.0, 1.0, math.pi):
+        assert np.allclose(model.tool_position({**q, "joint_3": j3}), p, atol=1e-12)
 
 
 def test_collision_boxes(model):
-    def hit(j1, j2):
-        return bool(model.collisions({"z_carriage": 0.5, "z_crate": 0.3,
-                                      "joint_1": DEG(j1), "joint_2": DEG(j2)})[0])
+    def hit(j1, j2, j3=0):
+        return bool(model.collisions({"z_carriage": 0.3, "z_crate": 0.15, "joint_1": DEG(j1),
+                                      "joint_2": DEG(j2), "joint_3": DEG(j3)})[0])
     assert not hit(0, 0)
     assert not hit(0, 180)        # link 2 folded under link 1, arm in the middle
     assert not hit(60, 15)        # picking on the right
-    assert hit(60, 165)           # folding out there sweeps through the carriage
-    assert hit(120, 180)          # ... and at 120 deg through the gantry
+    assert hit(60, 165)           # folding out there swings the gripper into the gantry
+    assert not hit(60, 165, 180)  # ... unless the gripper is turned round
+    assert hit(120, 180)          # at 120 deg link 2 reaches the gantry too
     assert hit(120, 0)            # mid_link reaches the gantry at the joint_1 limit
     # the crate and the carriage are kept apart by the gap, not the boxes
-    assert ("carriage", "crate") not in model.pairs
+    assert {"carriage", "crate"} not in [{a, b} for a, b, _ in model.pairs]
     assert not model.collisions({"z_carriage": 0.0, "z_crate": 0.0})[0]
+
+
+def test_gripper_turns_freely_at_rest(model):
+    """The gripper passes 2.5 cm under link 1. Both ride the carriage and never
+    move up or down relative to each other, so the margin is not added in z
+    between them - it is between the arm and the crate, which rides its own rail."""
+    q = {"z_carriage": 0.05, "z_crate": 0.0, "joint_1": 0.0, "joint_2": 0.0}
+    for j3 in np.radians(np.arange(-180, 181, 10)):
+        assert not model.colliding_pairs({**q, "joint_3": j3}), math.degrees(j3)
+    dz = {frozenset((a, b)): d for a, b, d in model.pairs}
+    assert dz[frozenset(("end_effector", "mid_link"))] == pytest.approx(2 * model.margin)
+    assert dz[frozenset(("crate", "end_effector"))] == 0.0
 
 
 # ---------------------------------------------------------------- profiles
@@ -151,7 +186,7 @@ def test_after_and_delayed():
 
 # ---------------------------------------------------------------- planner
 
-FRUIT = [(0.48, 0.58, 0.60), (0.28, 0.64, 0.70), (0.48, -0.58, 0.90), (0.28, -0.64, 1.00)]
+FRUIT = [(0.46, 0.55, 0.30), (0.28, 0.60, 0.36), (0.46, -0.55, 0.45), (0.28, -0.60, 0.51)]
 
 
 @pytest.mark.parametrize("point", FRUIT)
@@ -172,7 +207,7 @@ def test_pick_drop_next(model, planner, side):
         pick = planner.to_point(start, (x, side * y, z))
         check_plan(model, planner, pick, start)
         start = {j: (p.end, 0.0) for j, p in pick.profiles.items()}
-        j2 = pick.goal[2] - math.pi if pick.goal[2] > math.pi else pick.goal[2] + math.pi
+        j2 = pick.goal[2] - math.pi if pick.goal[2] > 0.0 else pick.goal[2] + math.pi
         drop = planner.to_joints(start, (pick.goal[0], 0.0, j2))
         check_plan(model, planner, drop, start)
         start = {j: (p.end, 0.0) for j, p in drop.profiles.items()}
@@ -191,38 +226,60 @@ def test_simultaneous(planner):
 
 
 def test_wait_instead_of_collision(model, planner):
-    """Folded in the middle, then out to the side: link 1 is faster, and
-    swinging out while link 2 is still folded sweeps it through the carriage -
-    joint_1 waits a little for joint_2."""
-    start = rest(z=0.4, j1=0.0, j2=DEG(190), crate=0.25)
-    plan = planner.to_joints(start, (0.4, DEG(90), DEG(20)))
+    """Gripper turned 90 deg, out to the side with link 2 folding back: link 1
+    is faster, and swinging out before link 2 has folded sweeps the gripper
+    through the gantry - joint_1 waits a little for joint_2."""
+    start = rest(z=0.3, j1=DEG(-40), j2=DEG(30), crate=0.15, j3=DEG(90))
+    plan = planner.to_joints(start, (0.3, DEG(80), DEG(170)))
     check_plan(model, planner, plan, start)
     assert any("joint_1 waits" in n for n in plan.notes)
     # and it is still a simultaneous move, not one joint after the other
     assert plan.duration < sum(min_time(*start[j], g, *planner.limits[j]).duration
-                               for j, g in (("joint_1", DEG(90)), ("joint_2", DEG(20))))
+                               for j, g in (("joint_1", DEG(80)), ("joint_2", DEG(170))))
 
 
 def test_stop_on_the_way(model, planner):
-    """Link 2 from 15 to 210 deg with link 1 out at 60 deg, staying there:
-    no wait helps, it swings in, turns, swings out."""
-    start = rest(z=0.4, j1=DEG(60), j2=DEG(15), crate=0.25)
-    plan = planner.to_joints(start, (0.4, DEG(60), DEG(210)))
+    """Gripper turned 90 deg, link 2 from -80 to 180 deg with link 1 out at
+    70..80 deg: no wait helps, it swings in, turns, swings out."""
+    start = rest(z=0.3, j1=DEG(80), j2=DEG(-80), crate=0.15, j3=DEG(90))
+    plan = planner.to_joints(start, (0.3, DEG(70), DEG(180)))
     check_plan(model, planner, plan, start)
     assert any("stops at joint_1" in n for n in plan.notes)
 
 
+def test_joint_3(model, planner):
+    """A point goal leaves the gripper where it is; a fourth joint value turns it."""
+    start = rest(j3=0.7)
+    plan = planner.to_point(start, FRUIT[0])
+    check_plan(model, planner, plan, start)
+    assert plan.goal[3] == pytest.approx(0.7)
+    plan = planner.to_joints(start, (0.2, DEG(40), DEG(30), DEG(-120)))
+    check_plan(model, planner, plan, start)
+    assert plan.profiles["joint_3"].end == pytest.approx(DEG(-120))
+    with pytest.raises(PlanError, match="joint goal is"):
+        planner.to_joints(start, (0.2, 0.0))
+
+
+def test_out_of_reach_says_why(model, planner):
+    far = model.j1_xy + [model.link1 + model.link2 + 0.01, 0.0]
+    with pytest.raises(PlanError, match="from joint_1"):
+        planner.to_point(rest(), [far[0], far[1], 0.5])
+    # Within reach, but straight behind joint_1: past its limit.
+    with pytest.raises(PlanError, match="joint_1 does not turn that far"):
+        planner.to_point(rest(), [model.j1_xy[0] - 0.3, model.j1_xy[1], 0.5])
+
+
 def test_goal_in_collision(planner):
     with pytest.raises(PlanError, match="collides at the goal"):
-        planner.to_joints(rest(), (0.5, DEG(60), DEG(165)))
+        planner.to_joints(rest(), (0.3, DEG(60), DEG(165)))
 
 
 def test_crate_keeps_its_gap(model, planner):
     # from home (gap 0) up: the crate follows; down from high: the crate goes first
     start = rest(z=0.0)
-    up = planner.to_joints(start, (1.0, 0.0, 0.0))
+    up = planner.to_joints(start, (0.4, 0.0, 0.0))
     check_plan(model, planner, up, start)
-    assert up.profiles["z_crate"].end == pytest.approx(1.0 - planner.crate_trail)
+    assert up.profiles["z_crate"].end == pytest.approx(0.4 - planner.crate_trail)
     start = {j: (p.end, 0.0) for j, p in up.profiles.items()}
     down = planner.to_joints(start, (0.1, 0.0, 0.0))
     check_plan(model, planner, down, start)
@@ -233,8 +290,8 @@ def test_crate_keeps_its_gap(model, planner):
 def test_new_goal_while_moving(model, planner):
     """Replacing a running motion: starts from its position and speed."""
     first = planner.to_point(rest(), FRUIT[0])
-    for t in (0.3, 0.8, 1.2):
-        start = first.state(t)
+    for f in (0.25, 0.5, 0.75):
+        start = first.state(f * first.duration)
         assert any(abs(v) > 0.1 for _, v in start.values())
         plan = planner.to_point(start, FRUIT[3])
         check_plan(model, planner, plan, start)

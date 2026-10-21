@@ -5,7 +5,8 @@
 //   can     - a real driver. The CAN thread streams its target as an absolute
 //             encoder position (0xF5) and reads the encoder back (0x31).
 //   virtual - no motor yet. State = command, like mock hardware, so the full
-//             arm controller and MoveIt keep working while only some axes exist.
+//             arm controller and canopyag_motion keep working while only
+//             some axes exist.
 //
 // Threads: read()/write() run in the controller manager's loop and never
 // touch the socket; they swap targets and states with the CAN thread through

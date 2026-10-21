@@ -12,7 +12,7 @@ install(
 )
 
 install(
-  PROGRAMS scripts/motion_server.py scripts/move_to.py scripts/demo.py
+  PROGRAMS scripts/motion_server.py scripts/move_to.py scripts/demo.py scripts/goal_panel.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

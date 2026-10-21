@@ -10,11 +10,12 @@
 # ===========================================================================
 
 # The tool point: what "move to (x, y, z)" puts there. A point in tool_link's
-# frame; for now the far end of endeffector_link's collision box, half way
-# down its height.
+# frame: on joint_3's axis (robot_parameters.yaml joints.joint_3.xyz), half way
+# down the gripper. Keep it on that axis - then turning the gripper (joint_3)
+# does not move the tool point, and the inverse kinematics can ignore it.
 tool:
   link: endeffector_link
-  xyz: [0.28, 0.0, -0.03]       # <-- EDIT when the gripper exists
+  xyz: [0.25484, 0.0, -0.0267]  # <-- EDIT
 
 # Top speed and acceleration of every joint (m, rad). Each joint moves at
 # these, all at the same time. Keep them below what the motors can do:
@@ -24,6 +25,7 @@ limits:
   z_crate:    {velocity: 0.25, acceleration: 0.5}   # <-- EDIT
   joint_1:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
   joint_2:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
+  joint_3:    {velocity: 1.5, acceleration: 5.0}    # <-- EDIT
 
 collision:
   # Every collision box grows by this on every side. It covers the real robot

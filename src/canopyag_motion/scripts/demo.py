@@ -26,16 +26,16 @@ from rclpy.node import Node
 # Tool point of every fruit (world, m), right side. The arm reaches in from
 # APPROACH closer to the gantry, sideways.
 FRUIT = [
-    (0.48, 0.58, 0.60), (0.28, 0.64, 0.70),
-    (0.48, 0.58, 0.90), (0.28, 0.64, 1.00),
-    (0.48, 0.58, 1.20), (0.28, 0.64, 1.30),
+    (0.46, 0.55, 0.30), (0.28, 0.60, 0.36),
+    (0.46, 0.55, 0.45), (0.28, 0.60, 0.51),
+    (0.46, 0.55, 0.60), (0.28, 0.60, 0.66),
 ]
 APPROACH = 0.06            # m
 PICK_SPEED = 0.4           # of `speed`, for going in
 # Drop: joint_1 here, link 2 turned 180 deg from its pick angle - folded under
-# link 1. Folded, link 2's tip is a few cm from the carriage: with the 2 cm
-# collision margin (motion.yaml) that only fits with joint_1 within ~5 deg of
-# straight ahead.
+# link 1. Folded, the gripper points back at the gantry and comes within a few
+# cm of it: with the 2 cm collision margin (motion.yaml) that only fits with
+# joint_1 near straight ahead. joint_3 (the gripper) is not sent: it stays put.
 DROP_JOINT_1 = 0.0
 REST = [0.05, 0.0, 0.0]    # z_carriage, joint_1, joint_2: carriage just clear of the crate
 
@@ -93,7 +93,7 @@ class Demo(Node):
                 picked = self.move(f"fruit{i}_pick", point=fruit, speed=PICK_SPEED)
                 if picked is None:
                     return 1
-                j2 = picked[2] - math.pi if picked[2] > math.pi else picked[2] + math.pi
+                j2 = picked[2] - math.pi if picked[2] > 0.0 else picked[2] + math.pi
                 drop = [picked[0], DROP_JOINT_1, j2]
                 if self.move(f"fruit{i}_drop", joints=drop) is None:
                     return 1

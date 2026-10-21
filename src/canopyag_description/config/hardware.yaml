@@ -78,3 +78,10 @@ joints:
     max_motor_rpm: 900          # <-- EDIT: 900 rpm = 7.9 rad/s at the link
     acceleration: 240           # <-- EDIT: 1250 rpm/s = 10.9 rad/s^2 (joint_limits: 5)
     initial_position: 0.0       # <-- EDIT
+
+  # Gripper rotation (end_effector). No motor yet: set mode: can and fill in
+  # can_id, motor_revs_per_unit, reversed, max_motor_rpm and acceleration
+  # (see joint_1 / joint_2) once it has one.
+  joint_3:
+    mode: virtual               # <-- EDIT
+    initial_position: 0.0       # <-- EDIT

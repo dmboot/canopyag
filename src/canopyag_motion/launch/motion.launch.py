@@ -2,6 +2,7 @@
 
     ros2 launch canopyag_motion motion.launch.py                     # just the server
     ros2 launch canopyag_motion motion.launch.py demo:=true speed:=0.3 side:=left
+    ros2 launch canopyag_motion motion.launch.py panel:=true         # + the goal window
 
 Works on whatever runs the controllers: hardware.launch.py (real robot,
 activate arm_controller first), mock.launch.py, gazebo.launch.py
@@ -27,6 +28,8 @@ def generate_launch_description():
         DeclareLaunchArgument("side", default_value="right",
                               description="Demo: pick on the right or left side of the "
                                           "gantry, seen from the front."),
+        DeclareLaunchArgument("panel", default_value="false",
+                              description="Open goal_panel.py: x/y/z sliders to send goals."),
         DeclareLaunchArgument("use_sim_time", default_value="false",
                               description="true with gazebo.launch.py"),
         Node(
@@ -43,6 +46,13 @@ def generate_launch_description():
                          "side": LaunchConfiguration("side"),
                          "use_sim_time": sim_time}],
             condition=IfCondition(LaunchConfiguration("demo")),
+            output="screen",
+        ),
+        Node(
+            package="canopyag_motion",
+            executable="goal_panel.py",
+            parameters=[{"use_sim_time": sim_time}],
+            condition=IfCondition(LaunchConfiguration("panel")),
             output="screen",
         ),
     ])

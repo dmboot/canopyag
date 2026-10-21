@@ -11,8 +11,12 @@ how the joints move at once:
     Of all the waits that clear the collision boxes, the shortest total wins;
   * if no wait helps (link 2 has to turn past 180 deg while joint_1 starts and
     ends far out), the arm goes through a stop at an intermediate joint_1;
-  * a point has up to two arm solutions (elbow either way, and joint_2 at 0 or
-    2 pi): each is planned and the fastest collision-free one is used.
+  * a point has up to two arm solutions (elbow either way, and joint_2 at -pi
+    or pi): each is planned and the fastest collision-free one is used.
+
+joint_3 (the gripper) stays where it is on a move to a point - the tool point
+is on its axis - and goes to the fourth value of a joint goal if there is one.
+It moves at the same time as the rest and its box is collision-checked too.
 
 The carriage and the crate ride the same rail. The crate goes to
 `crate_trail` below the carriage's goal (or only as low as needed when
@@ -25,7 +29,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .model import ARM, CRATE, JOINTS
+from .model import ARM, CRATE, JOINTS, WRIST
 from .profiles import EPS_V, Profile, hold, min_time
 
 
@@ -37,7 +41,7 @@ class PlanError(ValueError):
 class Plan:
     profiles: dict                     # joint -> Profile, all starting at t = 0
     duration: float
-    goal: np.ndarray                   # [z_carriage, joint_1, joint_2]
+    goal: np.ndarray                   # [z_carriage, joint_1, joint_2, joint_3]
     notes: list = field(default_factory=list)
 
     def sample(self, t):
@@ -69,10 +73,11 @@ class Planner:
         self.crate_follow = bool(crate_follow)
         # The fastest any point of the arm moves, at the joint speed limits.
         v1, v2 = self.limits["joint_1"][0], self.limits["joint_2"][0]
-        v_arm = max(v1 * model.reach1 + v2 * model.reach2, self.limits["z_carriage"][0])
+        v_wrist = self.limits[WRIST][0] * model.reach3
+        v_arm = max(v1 * model.reach1 + v2 * model.reach2 + v_wrist, self.limits["z_carriage"][0])
         self.check_dt = float(check_step) / v_arm
-        # Once the arm stands still only the rail moves, much slower.
-        v_rail = max(self.limits["z_carriage"][0], self.limits[CRATE][0])
+        # Once the arm stands still only the rail (and the gripper) moves, much slower.
+        v_rail = max(self.limits["z_carriage"][0], self.limits[CRATE][0], v_wrist)
         self.rail_dt = float(check_step) / v_rail
         self.delay_step = float(delay_step)
 
@@ -83,7 +88,7 @@ class Planner:
         return self._from(start, lambda st: self._point(st, point, speed))
 
     def to_joints(self, start, goal, speed=1.0):
-        """Arm to [z_carriage, joint_1, joint_2]."""
+        """Arm to [z_carriage, joint_1, joint_2] or [..., joint_3]."""
         return self._from(start, lambda st: self._joints(st, goal, speed))
 
     def _from(self, start, plan):
@@ -110,10 +115,10 @@ class Planner:
         for j, (p, v) in start.items():
             a = self.limits[j][1]
             stop[j] = min_time(p, v, p + v * abs(v) / (2.0 * a), self.limits[j][0], a)
-        rail = {j: stop[j] for j in ("z_carriage", CRATE)}
+        rail = {j: stop[j] for j in ("z_carriage", CRATE, WRIST)}
         if not self._free((stop["joint_1"], stop["joint_2"]), rail):
             raise PlanError("the robot is moving and cannot stop without a collision")
-        goal = np.array([stop[j].end for j in ARM])
+        goal = np.array([stop[j].end for j in ARM + (WRIST,)])
         return Plan(stop, max(pr.duration for pr in stop.values()), goal, ["stop"])
 
     def _point(self, start, point, speed):
@@ -123,33 +128,46 @@ class Planner:
             r = math.hypot(x - self.model.j1_xy[0], y - self.model.j1_xy[1])
             lo, hi = abs(self.model.link1 - self.model.link2), self.model.link1 + self.model.link2
             zlo, zhi = self.model.limits("z_carriage")
+            zlo, zhi = zlo + self.model.tool_z0, zhi + self.model.tool_z0
+            if lo <= r <= hi and zlo <= z <= zhi:
+                raise PlanError(f"({x:.3f}, {y:.3f}, {z:.3f}) is out of reach: "
+                                f"joint_1 does not turn that far")
             raise PlanError(
                 f"({x:.3f}, {y:.3f}, {z:.3f}) is out of reach: the tool reaches "
                 f"{lo:.3f}..{hi:.3f} m from joint_1 (this is {r:.3f} m) and z "
-                f"{zlo + self.model.tool_z0:.3f}..{zhi + self.model.tool_z0:.3f} m")
+                f"{zlo:.3f}..{zhi:.3f} m")
         return self._best(start, goals, speed)
 
     def _joints(self, start, goal, speed):
         goal = np.asarray(goal, float)
-        if goal.shape != (3,):
-            raise PlanError("a joint goal is [z_carriage, joint_1, joint_2]")
-        for j, v in zip(ARM, goal):
+        if goal.shape not in ((3,), (4,)):
+            raise PlanError("a joint goal is [z_carriage, joint_1, joint_2] or "
+                            "[z_carriage, joint_1, joint_2, joint_3]")
+        for j, v in zip(ARM + (WRIST,), goal):
             lo, hi = self.model.limits(j)
             if not lo - 1e-9 <= v <= hi + 1e-9:
                 raise PlanError(f"{j} = {v:.4f} is outside its limits {lo:.4f} .. {hi:.4f}")
-        return self._best(start, [goal], speed)
+        return self._best(start, [goal[:3]], speed, goal[3] if goal.size == 4 else None)
 
     # ------------------------------------------------------------------ planning
 
-    def _best(self, start, goals, speed):
+    def _best(self, start, goals, speed, wrist_goal=None):
+        """wrist_goal: joint_3 at the end, or None: where it is (where it
+        stops, if it is turning)."""
         if not 0.0 < speed <= 1.0:
             raise PlanError(f"speed must be in (0, 1], got {speed}")
         lim = {j: (v * speed, a * speed) for j, (v, a) in self.limits.items()}
         rail, rail_notes = self._rail(start, goals[0][0], lim)
+        # The gripper moves on its own, like the rail: every collision check
+        # below samples it with the rail's profiles.
+        p3, v3 = start[WRIST]
+        if wrist_goal is None:
+            wrist_goal = p3 + v3 * abs(v3) / (2.0 * lim[WRIST][1])
+        rail[WRIST] = min_time(p3, v3, float(wrist_goal), *lim[WRIST])
         why, free = [], []
         for goal in goals:
             q_goal = {"z_carriage": goal[0], "joint_1": goal[1], "joint_2": goal[2],
-                      CRATE: rail[CRATE].end}
+                      CRATE: rail[CRATE].end, WRIST: rail[WRIST].end}
             hit = self.model.colliding_pairs(q_goal)
             if hit:
                 why.append(f"joint_1 {goal[1]:+.3f} joint_2 {goal[2]:.3f}: "
@@ -174,7 +192,8 @@ class Planner:
                 profiles.update(rail)
                 duration = max(p.duration for p in profiles.values())
                 if best is None or duration < best.duration - 1e-6:
-                    best = Plan(profiles, duration, np.array(goal, float), rail_notes + notes)
+                    best = Plan(profiles, duration, np.append(goal, rail[WRIST].end),
+                                rail_notes + notes)
             if best is not None:
                 return best
         for goal in free:

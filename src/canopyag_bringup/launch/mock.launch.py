@@ -1,4 +1,4 @@
-"""The robot on mock hardware: ros2_control without motors, no MoveIt.
+"""The robot on mock hardware: ros2_control without motors.
 
     ros2 launch canopyag_bringup mock.launch.py                 # + RViz
     ros2 launch canopyag_bringup mock.launch.py rviz:=false

@@ -38,6 +38,16 @@ Visualization Manager:
         Depth: 5
         Durability Policy: Volatile
         Reliability Policy: Reliable
+    # canopyag_motion goal_panel.py: the point being picked (green: reachable,
+    # red: not) and the path to it from where the robot is now.
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Goal preview
+      Enabled: true
+      Topic:
+        Value: /goal_preview
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: false

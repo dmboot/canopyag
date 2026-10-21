@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Send the robot somewhere and wait until it is there.
 
-    ros2 run canopyag_motion move_to.py 0.45 0.55 0.7             # tool point, world, m
-    ros2 run canopyag_motion move_to.py 0.45 0.55 0.7 --speed 0.3
+    ros2 run canopyag_motion move_to.py 0.45 0.55 0.5             # tool point, world, m
+    ros2 run canopyag_motion move_to.py 0.45 0.55 0.5 --speed 0.3
     ros2 run canopyag_motion move_to.py --joints 0.3 60 15         # z_carriage m, joint_1/2 deg
+    ros2 run canopyag_motion move_to.py --joints 0.3 60 15 90      # + joint_3 (gripper) deg
     ros2 run canopyag_motion move_to.py --joints 0.3 1.05 0.26 --rad
 
 Needs motion_server.py running (canopyag_motion motion.launch.py). Ctrl+C
@@ -24,19 +25,23 @@ from rclpy.signals import SignalHandlerOptions
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("values", type=float, nargs=3, metavar="V",
-                    help="x y z of the tool point (m), or with --joints: z_carriage joint_1 joint_2")
+    ap.add_argument("values", type=float, nargs="+", metavar="V",
+                    help="x y z of the tool point (m), or with --joints: z_carriage joint_1 "
+                         "joint_2 [joint_3]")
     ap.add_argument("--joints", action="store_true", help="the values are joints, not a point")
     ap.add_argument("--rad", action="store_true", help="with --joints: radians, not degrees")
     ap.add_argument("--speed", type=float, default=1.0, help="0..1 of the limits (default 1)")
     args = ap.parse_args(rclpy.utilities.remove_ros_args(sys.argv)[1:])
 
+    if len(args.values) != 3 and not (args.joints and len(args.values) == 4):
+        ap.error("give x y z, or --joints z_carriage joint_1 joint_2 [joint_3]")
+
     goal = MoveTo.Goal(speed=args.speed)
     if args.joints:
-        z, j1, j2 = args.values
+        z, *angles = args.values
         if not args.rad:
-            j1, j2 = math.radians(j1), math.radians(j2)
-        goal.joints = [z, j1, j2]
+            angles = [math.radians(a) for a in angles]
+        goal.joints = [z, *angles]
     else:
         goal.point = Point(x=args.values[0], y=args.values[1], z=args.values[2])
 
@@ -63,7 +68,8 @@ def main():
     r = res.result
     if r.joints:
         print(f"joints: z_carriage {r.joints[0]:.3f} m, joint_1 {math.degrees(r.joints[1]):.1f} deg, "
-              f"joint_2 {math.degrees(r.joints[2]):.1f} deg ({r.duration:.2f} s planned)")
+              f"joint_2 {math.degrees(r.joints[2]):.1f} deg, joint_3 {math.degrees(r.joints[3]):.1f} "
+              f"deg ({r.duration:.2f} s planned)")
     print(("OK: " if r.success else "FAILED: ") + r.message)
     node.destroy_node()
     rclpy.try_shutdown()

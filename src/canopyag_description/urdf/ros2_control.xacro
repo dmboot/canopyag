@@ -3,11 +3,11 @@
   One <ros2_control> system holding every non-fixed joint from
   robot_parameters.yaml. `sim` and `mock` pick the hardware plugin and are the
   only difference between Gazebo, mock hardware and the real robot - the URDF,
-  the controllers and MoveIt are identical either way.
+  the controllers and canopyag_motion are identical either way.
 
   mock:=true uses ros2_control's mock_components/GenericSystem: every command
   is reflected straight back as state. No physics, no hardware - what the
-  MoveIt demo runs on until the real axes exist.
+  mock demo runs on until the real axes exist.
 
   Neither: canopyag_hardware/CanopyagSystem on SocketCAN. Only then is
   config/hardware.yaml loaded, and its values become <param> tags on the

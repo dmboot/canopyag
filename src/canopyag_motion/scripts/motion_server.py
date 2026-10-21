@@ -2,7 +2,7 @@
 """Moves the robot to world points or joint values, as fast as it can.
 
     ros2 launch canopyag_motion motion.launch.py           # this node
-    ros2 run canopyag_motion move_to.py 0.45 0.5 0.7       # a goal from the shell
+    ros2 run canopyag_motion move_to.py 0.45 0.5 0.5       # a goal from the shell
 
 Goals:
   move_to     (canopyag_interfaces/action/MoveTo)   a point or joint values,
@@ -46,9 +46,9 @@ import tf2_geometry_msgs  # noqa: F401  (registers PointStamped with tf2)
 from tf2_ros import Buffer, TransformListener
 
 import canopyag_motion
-from canopyag_motion import ARM, CRATE, JOINTS, PlanError
+from canopyag_motion import ARM, CRATE, JOINTS, WRIST, PlanError
 
-CONTROLLERS = {"arm_controller": list(ARM), "crate_controller": [CRATE]}
+CONTROLLERS = {"arm_controller": list(ARM) + [WRIST], "crate_controller": [CRATE]}
 
 
 class Motion:
@@ -219,7 +219,7 @@ class MotionServer(Node):
             else:
                 raise PlanError(f"planning takes too long ({took:.2f} s) to join the running motion")
             what = (f"({goal[0]:.3f}, {goal[1]:.3f}, {goal[2]:.3f})" if kind == "point" else
-                    f"joints ({goal[0]:.3f}, {goal[1]:.3f}, {goal[2]:.3f})")
+                    f"joints ({', '.join(f'{v:.3f}' for v in goal)})")
             return self.send(plan, t0, f"{what} [planned in {1000 * took:.0f} ms]",
                              goal if kind == "point" else None)
 
@@ -240,7 +240,8 @@ class MotionServer(Node):
         notes = f" ({'; '.join(plan.notes)})" if plan.notes else ""
         self.get_logger().info(
             f"{what}: joints ({plan.goal[0]:.3f} m, {np.degrees(plan.goal[1]):.1f} deg, "
-            f"{np.degrees(plan.goal[2]):.1f} deg) in {plan.duration:.2f} s{notes}")
+            f"{np.degrees(plan.goal[2]):.1f} deg, {np.degrees(plan.goal[3]):.1f} deg) "
+            f"in {plan.duration:.2f} s{notes}")
         self.publish_markers(plan, point)
         if plan.duration < 1e-6:
             motion.finish(True, "already there")

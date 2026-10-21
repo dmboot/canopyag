@@ -9,7 +9,10 @@ checks a whole trajectory.
 Collision: each link's collision_box, grown by `margin` on every side. Two
 boxes touch when their z ranges overlap and their footprints (rectangles
 turned by yaw) overlap. Links that are parent and child never count (they
-always touch), nor the pairs in `ignore`.
+always touch), nor the pairs in `ignore`. Links on the same rail (the same
+prismatic joint above them, e.g. everything on the carriage) cannot move up
+or down relative to each other, so between them the margin is left out of
+the z test: the gripper may pass 2.5 cm under link 1.
 """
 
 import itertools
@@ -19,7 +22,10 @@ import numpy as np
 
 ARM = ("z_carriage", "joint_1", "joint_2")
 CRATE = "z_crate"
-JOINTS = ARM + (CRATE,)
+# Turns the gripper about its own vertical axis. Not part of the inverse
+# kinematics: the tool point sits on its axis, so it only turns the gripper.
+WRIST = "joint_3"
+JOINTS = ARM + (CRATE, WRIST)
 
 
 class ModelError(ValueError):
@@ -73,7 +79,15 @@ class Model:
                                     np.array(b["size"], float) / 2.0 + self.margin)
         skip = {frozenset((j["parent"], j["child"])) for j in self.joints.values()}
         skip |= {frozenset(pair) for pair in ignore}
-        self.pairs = [(a, b) for a, b in itertools.combinations(sorted(self.boxes), 2)
+        parent = {j["child"]: (n, j) for n, j in self.joints.items()}
+
+        def rail(link):         # the prismatic joint (or root) the link rides on
+            while link in parent and parent[link][1]["type"] != "prismatic":
+                link = parent[link][1]["parent"]
+            return parent[link][0] if link in parent else self.root
+        # (a, b, how much less the z ranges may overlap): 2 * margin on one rail.
+        self.pairs = [(a, b, 2.0 * self.margin if rail(a) == rail(b) else 0.0)
+                      for a, b in itertools.combinations(sorted(self.boxes), 2)
                       if frozenset((a, b)) not in skip]
 
         # The arm: z_carriage -> joint_1 -> joint_2 -> tool_link, every one
@@ -98,16 +112,22 @@ class Model:
         self.alpha2 = math.atan2(self.tool[1], self.tool[0])
         self.tool_z0 = float(self.tool_position({n: 0.0 for n in JOINTS})[2])
 
-        # How far from its joint any part of link 1 / link 2 reaches (boxes
-        # and tool point): turns a joint speed into a speed of the arm's parts.
-        def reach(link, extra=0.0):
-            if link not in self.boxes:
-                return extra
-            c, h = self.boxes[link]
-            return max(extra, max(math.hypot(c[0] + sx * h[0], c[1] + sy * h[1])
-                                  for sx in (-1, 1) for sy in (-1, 1)))
-        self.reach2 = reach(tool_link, self.link2)
-        self.reach1 = max(reach(chain[1]["child"], self.link1), self.link1 + self.reach2)
+        # How far from its joint any part of link 1 / link 2 / the gripper
+        # reaches (boxes, the tool point and everything further down the
+        # chain): turns a joint speed into a speed of the arm's parts.
+        def reach(link):
+            r = math.hypot(self.tool[0], self.tool[1]) if link == tool_link else 0.0
+            if link in self.boxes:
+                c, h = self.boxes[link]
+                r = max(r, max(math.hypot(c[0] + sx * h[0], c[1] + sy * h[1])
+                               for sx in (-1, 1) for sy in (-1, 1)))
+            for j in self.joints.values():
+                if j["parent"] == link:
+                    r = max(r, math.hypot(j["origin"][0], j["origin"][1]) + reach(j["child"]))
+            return r
+        self.reach2 = reach(tool_link)
+        self.reach1 = reach(chain[1]["child"])
+        self.reach3 = reach(self.joints[WRIST]["child"])
 
     @staticmethod
     def _origin(what, xyz, rpy):
@@ -148,7 +168,7 @@ class Model:
     def inverse(self, point):
         """Arm joints [z_carriage, joint_1, joint_2] that put the tool point at
         `point` (world). Both elbow solutions, each in every equivalent turn
-        that fits the joint limits (joint_2 0..2 pi allows two at 0 / 2 pi).
+        that fits the joint limits (joint_2 -pi..pi allows two at +-pi).
         Continuous joints come back in (-pi, pi]. Empty if out of reach."""
         zj = self.joints["z_carriage"]
         zc = (float(point[2]) - self.tool_z0) / zj["sign"]
@@ -172,10 +192,25 @@ class Model:
                     out.append(np.array([zc, v1, v2]))
         return out
 
+    def reach_box(self, n=181):
+        """(lo, hi): world corners of the box around every tool point the arm
+        reaches without touching itself, rounded out to the cm. Not every
+        point inside is reachable."""
+        (z_lo, z_hi), (c_lo, _) = self.limits("z_carriage"), self.limits(CRATE)
+        j1, j2 = np.meshgrid(np.linspace(*self.limits("joint_1"), n),
+                             np.linspace(*self.limits("joint_2"), n))
+        q = {"z_carriage": np.full(j1.size, (z_lo + z_hi) / 2), "joint_1": j1.ravel(),
+             "joint_2": j2.ravel(), CRATE: np.full(j1.size, c_lo)}
+        tool = self.tool_position(q)[:, ~self.collisions(q)]
+        lo = np.floor(tool.min(axis=1) * 100) / 100
+        hi = np.ceil(tool.max(axis=1) * 100) / 100
+        lo[2], hi[2] = z_lo + self.tool_z0, z_hi + self.tool_z0
+        return lo, hi
+
     def turns(self, joint, value, slack=1e-3):
         """value + k * 2 pi for every k that fits the joint's limits. Within
         `slack` (rad) of a limit counts as in, clamped onto it: a limit of
-        6.283 means 2 pi."""
+        3.1416 means pi."""
         lo, hi = self.limits(joint)
         v = math.remainder(value, 2 * math.pi)
         if math.isinf(lo) or math.isinf(hi):
@@ -193,14 +228,14 @@ class Model:
         """q: joint -> value or array of N. Bool array (N,): any pair in collision."""
         world, n = self._world_boxes(q)
         hit = np.zeros(n, bool)
-        for a, b in self.pairs:
-            hit |= self._touch(world[a], world[b])
+        for a, b, dz in self.pairs:
+            hit |= self._touch(world[a], world[b], dz)
         return hit
 
     def colliding_pairs(self, q):
         """For one configuration: the pairs that touch, as 'link/link' (for messages)."""
         world, _ = self._world_boxes(q)
-        return [f"{a}/{b}" for a, b in self.pairs if self._touch(world[a], world[b])[0]]
+        return [f"{a}/{b}" for a, b, dz in self.pairs if self._touch(world[a], world[b], dz)[0]]
 
     def _world_boxes(self, q):
         poses = self.link_poses(q)
@@ -213,10 +248,10 @@ class Model:
         return world, n
 
     @staticmethod
-    def _touch(A, B):
+    def _touch(A, B, dz=0.0):
         ax, ay, az, at, ah = A
         bx, by, bz, bt, bh = B
-        hit = np.abs(az - bz) < ah[2] + bh[2]
+        hit = np.abs(az - bz) < ah[2] + bh[2] - dz
         dx, dy = bx - ax, by - ay
         ua = (np.cos(at), np.sin(at))
         ub = (np.cos(bt), np.sin(bt))

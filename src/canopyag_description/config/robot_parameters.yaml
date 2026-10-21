@@ -31,7 +31,7 @@ meshes:
   visual_dir: meshes/visual
   collision_dir: meshes/collision
   scale: [1.0, 1.0, 1.0]
-  # false -> collision reuses the visual mesh (fine for RViz and MoveIt).
+  # false -> collision reuses the visual mesh (fine for RViz).
   # true  -> collision uses collision_dir, which must hold decimated copies.
   #          Do that before running Gazebo; raw exports are ~25k triangles
   #          a link and the physics step will crawl.
@@ -51,14 +51,14 @@ counterweights:
   z_carriage:
     note: |-
       Assumed fully balanced: carriage + mid_link + endeffector_link +
-      endeffector from the CAD. Replace with the weighed counterweight.
-    mass: 2.105947
+      end_effector from the CAD. Replace with the weighed counterweight.
+    mass: 2.718675
   z_crate:
     note: |-
       Assumed fully balanced against the empty crate from the CAD. A full
       crate is heavier than its counterweight - raise crate mass or add a
       payload link if that load matters.
-    mass: 0.485111
+    mass: 0.598668
 
 links:
   gantry:
@@ -66,91 +66,120 @@ links:
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.12, 0.367, 1.659], xyz: [0.0, 0.0, 0.8295]}
-    mass: 5.434082892
-    com_xyz: [0.005832611, -0.000182447, 1.071368327]
+    collision_box: {size: [0.1838, 0.367, 1.54], xyz: [0.0119, 0.0, 0.77]}
+    mass: 6.164941163
+    com_xyz: [0.017144702, 4.6722e-05, 1.048507935]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.324675201988, ixy: 5.585539e-06, ixz: -8.03894e-07, iyy: 0.322069174878, iyz: 4.139705e-06, izz: 0.008758488134}
+    inertia: {ixx: 0.324953863473, ixy: 6.1934e-08, ixz: -0.000116331498, iyy: 0.326287146104, iyz: -1.7924e-08, izz: 0.011889633158}
   crate:
     note: |-
-      Collision box is the mesh bounding box with its top lowered 5 mm:
-      at home the crate and the carriage touch exactly, and a touching
-      pair would make the home state a collision for MoveIt.
+      Collision box is the mesh bounding box with its top lowered 10 mm:
+      at home the carriage's bearing blocks reach 5 mm into the crate's
+      bounding box, and an overlapping pair would make the home state a
+      collision. The lowered box leaves 5 mm between them.
     mesh: crate.stl
     material: crate
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.035, 0.342, 0.16], xyz: [-0.0125, 0.0, 0.075]}
-    mass: 0.485110993
-    com_xyz: [-0.006951772, 0.0, 0.080630452]
+    collision_box: {size: [0.0859, 0.342, 0.1944], xyz: [-0.03275, 0.0, 0.0578]}
+    mass: 0.598668211
+    com_xyz: [-0.013456256, 6.939e-06, 0.084943201]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.003479537648, ixy: 0.0, ixz: 2.048e-09, iyy: 0.000958554753, iyz: 0.0, izz: 0.002532085602}
+    inertia: {ixx: 0.003609057017, ixy: -1e-12, ixz: 4.70288e-07, iyy: 0.000946458193, iyz: -7.9e-11, izz: 0.002743843778}
   carriage:
     mesh: carriage.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.193, 0.342, 0.165], xyz: [0.0665, 0.0, 0.0775]}
-    mass: 0.884430982
-    com_xyz: [0.029602932, 7.3303e-05, 0.072251769]
+    collision_box: {size: [0.2587, 0.342, 0.2044], xyz: [0.05365, 0.0, 0.0628]}
+    mass: 1.420508553
+    com_xyz: [0.034813035, -2.524e-06, 0.067991978]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.003669525939, ixy: -9.80408e-07, ixz: -2.823682e-06, iyy: 0.001701411764, iyz: -2.17271e-07, izz: 0.003379935072}
+    inertia: {ixx: 0.004934504176, ixy: 2.061967e-06, ixz: 0.000237829835, iyy: 0.002973825367, iyz: -1.166231e-06, izz: 0.005133779098}
   mid_link:
     mesh: mid_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.427, 0.074, 0.096], xyz: [0.2015, 0.0, 0.047]}
-    mass: 0.745091632
-    com_xyz: [0.208944241, 1.7278e-05, 0.040826552]
+    collision_box: {size: [0.4434, 0.074, 0.077], xyz: [0.1917, 0.0, 0.0356]}
+    mass: 0.797529595
+    com_xyz: [0.1932823, -1.4064e-05, 0.049226311]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000425254023, ixy: -2.92076e-07, ixz: -1.5787709e-05, iyy: 0.002469848653, iyz: -3.1532e-08, izz: 0.002784012983}
+    inertia: {ixx: 0.000461135849, ixy: -8.194847e-06, ixz: -6.3912086e-05, iyy: 0.011175475724, iyz: -8.51525e-07, izz: 0.011516713373}
   endeffector_link:
     mesh: endeffector_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.2995, 0.068, 0.06], xyz: [0.1387, 0.0, -0.03]}
-    mass: 0.25643225
-    com_xyz: [0.134032575, 2.51e-06, -0.027018873]
+    collision_box: {size: [0.2995, 0.068, 0.06], xyz: [0.13875, 0.0, 0.0094]}
+    mass: 0.263336756
+    com_xyz: [0.133087761, 1.327e-06, 0.012572098]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 7.0635337e-05, ixy: 6.9226e-08, ixz: 2.0818838e-05, iyy: 0.001591408915, iyz: -4.942e-09, izz: 0.001640234528}
+    inertia: {ixx: 7.1743985e-05, ixy: 1.26671e-07, ixz: 2.1902239e-05, iyy: 0.001622543183, iyz: -6.26e-09, izz: 0.001671935951}
+  end_effector:
+    mesh: end_effector.stl
+    material: structure
+    visual_xyz: [0.0, 0.0, 0.0]
+    visual_rpy: [0.0, 0.0, 0.0]
+    collision_box: {size: [0.2227, 0.1699, 0.0482], xyz: [0.10035, -0.00055, -0.0241]}
+    mass: 0.237299902
+    com_xyz: [0.081974532, -0.000489427, -0.019813075]
+    com_rpy: [0.0, 0.0, 0.0]
+    inertia: {ixx: 8.1160187e-05, ixy: 2.4677e-07, ixz: -2.067577e-06, iyy: 9.4075527e-05, iyz: 9.65678e-07, izz: 0.000132548388}
 
 joints:
   z_crate:
+    note: |-
+      SolidWorks writes prismatic limits as limit-mate distances, i.e. the
+      height of the crate frame above the gantry base: 0.1681 .. 0.6485,
+      exported at the bottom (lower == xyz z). The joint counts from that
+      home position, so the limit is 0 .. 0.6485 - 0.1681.
     type: prismatic
     parent: gantry
     child: crate
-    xyz: [0.071, -0.00085, 0.0]
+    xyz: [0.09165, -0.00125, 0.1681]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 1.215}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.4804}
     dynamics: {damping: 0.0, friction: 0.0}
   z_carriage:
+    note: |-
+      SolidWorks writes prismatic limits as limit-mate distances, i.e. the
+      height of the carriage frame above the gantry base: 0.3675 .. 0.8135,
+      exported at the bottom (lower == xyz z). The joint counts from that
+      home position, so the limit is 0 .. 0.8135 - 0.3675.
     type: prismatic
     parent: gantry
     child: carriage
-    xyz: [0.071, -0.00085, 0.165]
+    xyz: [0.09165, -0.00125, 0.3675]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 1.0, lower: 0, upper: 1.22}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.446}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_1:
     type: revolute
     parent: carriage
     child: mid_link
-    xyz: [0.131, 0.0, 0.09785]
+    xyz: [0.1514, 0.0, -0.0788]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 3.0, lower: -2.094, upper: 2.094}
+    limit: {effort: 50.0, velocity: 3.0, lower: -2.0944, upper: 2.0944}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_2:
     type: revolute
     parent: mid_link
     child: endeffector_link
-    xyz: [0.37, 0.0, -0.0007495]
+    xyz: [0.3684, 0.0, -0.0251]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 3.0, lower: 0, upper: 6.283}
+    limit: {effort: 50.0, velocity: 3.0, lower: -3.1416, upper: 3.1416}
     dynamics: {damping: 0.0, friction: 0.0}
-
+  joint_3:
+    type: continuous
+    parent: endeffector_link
+    child: end_effector
+    xyz: [0.25484, 0.0, -0.0026]
+    rpy: [0.0, 0.0, 0.0]
+    axis: [0.0, 0.0, 1.0]
+    limit: {effort: 50.0, velocity: 1.5}
+    dynamics: {damping: 0.0, friction: 0.0}

@@ -8,7 +8,7 @@ as its limits allow, all joints at once, clear of its own collision boxes.
 
 import yaml
 
-from .model import ARM, CRATE, JOINTS, Model, ModelError       # noqa: F401
+from .model import ARM, CRATE, JOINTS, WRIST, Model, ModelError  # noqa: F401
 from .planner import Plan, PlanError, Planner                  # noqa: F401
 
 

@@ -2,6 +2,7 @@
 
     ros2 launch canopyag_motion demo.launch.py
     ros2 launch canopyag_motion demo.launch.py side:=left loop:=true speed:=0.5
+    ros2 launch canopyag_motion demo.launch.py demo:=false panel:=true   # pick goals in a window
     ros2 launch canopyag_motion demo.launch.py demo:=false     # just the server: send goals
 """
 
@@ -24,7 +25,9 @@ def generate_launch_description():
         DeclareLaunchArgument("loop", default_value="false"),
         DeclareLaunchArgument("speed", default_value="1.0"),
         DeclareLaunchArgument("side", default_value="right"),
+        DeclareLaunchArgument("panel", default_value="false",
+                              description="Open goal_panel.py: x/y/z sliders to send goals."),
         DeclareLaunchArgument("rviz", default_value="true"),
         include("canopyag_bringup", "mock.launch.py", ["rviz"]),
-        include("canopyag_motion", "motion.launch.py", ["demo", "loop", "speed", "side"]),
+        include("canopyag_motion", "motion.launch.py", ["demo", "loop", "speed", "side", "panel"]),
     ])
