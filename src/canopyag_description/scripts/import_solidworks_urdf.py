@@ -41,7 +41,7 @@ PRESERVE = {
 }
 
 # sw_urdf_exporter leaves effort/velocity at 0 unless you fill them in in the
-# exporter dialog. A 0 limit means "cannot move" to Gazebo and the controllers, so
+# exporter dialog. A 0 limit means "cannot move" to the controllers, so
 # substitute something usable and say so.
 FALLBACK_EFFORT = {"prismatic": 200.0, "revolute": 50.0, "continuous": 50.0}
 FALLBACK_VELOCITY = {"prismatic": 0.25, "revolute": 1.5, "continuous": 1.5}
@@ -264,8 +264,7 @@ def emit(name, root, mount, meshes, materials, links, joints, counterweights, no
         f"  scale: {vec(meshes['scale'])}",
         "  # false -> collision reuses the visual mesh (fine for RViz).",
         "  # true  -> collision uses collision_dir, which must hold decimated copies.",
-        "  #          Do that before running Gazebo; raw exports are ~25k triangles",
-        "  #          a link and the physics step will crawl.",
+        "  #          Raw exports are ~25k triangles a link.",
         f"  use_collision_meshes: {str(meshes['use_collision_meshes']).lower()}",
         "",
         "materials:",
@@ -279,8 +278,7 @@ def emit(name, root, mount, meshes, materials, links, joints, counterweights, no
         "# other side of the gantry. `mass` is the counterweight itself; when it",
         "# equals the mass that joint carries, the axis feels no gravity load.",
         "# The links keep their real mass and inertia either way - only gravity along",
-        "# the axis is offset. Gazebo applies it as a constant upward force on the",
-        "# joint's child link (see canopyag_bringup/launch/gazebo.launch.py).",
+        "# the axis is offset. Only a record of the robot for now: nothing reads it.",
         "counterweights:" + ("" if counterweights else " {}"),
     ]
     for jname, C in counterweights.items():

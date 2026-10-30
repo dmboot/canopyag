@@ -27,7 +27,7 @@ def expand(**args):
 
 @pytest.fixture(scope="module")
 def urdf():
-    return ET.fromstring(expand(sim="true"))
+    return ET.fromstring(expand(mock="true"))
 
 
 @pytest.fixture(scope="module")
@@ -35,9 +35,9 @@ def cfg():
     return yaml.safe_load(PARAMS.read_text())
 
 
-@pytest.mark.parametrize("sim", ["true", "false"])
-def test_xacro_expands(sim):
-    assert "<robot" in expand(sim=sim)
+@pytest.mark.parametrize("mock", ["true", "false"])
+def test_xacro_expands(mock):
+    assert "<robot" in expand(mock=mock)
 
 
 def test_every_joint_in_the_yaml_reaches_the_urdf(urdf, cfg):
@@ -72,7 +72,7 @@ def test_urdf_tree_is_valid():
         pytest.skip("check_urdf not installed (apt install liburdfdom-tools)")
 
     with tempfile.NamedTemporaryFile("w", suffix=".urdf", delete=False) as fh:
-        fh.write(expand(sim="true"))
+        fh.write(expand(mock="true"))
         path = fh.name
     result = subprocess.run(["check_urdf", path], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -89,11 +89,10 @@ def test_counterweights_sit_on_prismatic_joints(cfg):
 HARDWARE = PKG / "config" / "hardware.yaml"
 
 
-@pytest.mark.parametrize("args", [{"sim": "true"}, {"sim": "false", "mock": "true"}])
-def test_sim_and_mock_do_not_read_hardware_yaml(args):
-    # A missing hardware_file must not matter: sim and mock output stays the
-    # same byte for byte, whatever hardware.yaml says.
-    assert expand(**args, hardware_file="/nonexistent.yaml") == expand(**args)
+def test_mock_does_not_read_hardware_yaml():
+    # A missing hardware_file must not matter: mock output stays the same byte
+    # for byte, whatever hardware.yaml says.
+    assert expand(mock="true", hardware_file="/nonexistent.yaml") == expand(mock="true")
 
 
 def test_hardware_yaml_covers_every_ros2_control_joint(cfg):
@@ -111,7 +110,7 @@ def test_hardware_yaml_covers_every_ros2_control_joint(cfg):
 
 
 def test_real_plugin_gets_hardware_params():
-    root = ET.fromstring(expand(sim="false", hardware_file=str(HARDWARE)))
+    root = ET.fromstring(expand(hardware_file=str(HARDWARE)))
     rc = root.find("ros2_control")
     assert rc.find("hardware/plugin").text == "canopyag_hardware/CanopyagSystem"
     for joint in rc.findall("joint"):

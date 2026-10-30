@@ -1,6 +1,6 @@
 """Show the robot in RViz with a slider per joint.
 
-No Gazebo, no controllers - the fast loop for checking that
+No controllers - the fast loop for checking that
 config/robot_parameters.yaml matches the CAD.
 
     ros2 launch canopyag_description view_robot.launch.py
@@ -23,7 +23,6 @@ def generate_launch_description():
         Command([
             "xacro ",
             PathJoinSubstitution([pkg, "urdf", "canopyag.urdf.xacro"]),
-            " sim:=false",
             " params_file:=", LaunchConfiguration("params_file"),
         ]),
         value_type=str,

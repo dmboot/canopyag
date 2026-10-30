@@ -32,11 +32,23 @@ sends it (`crate`), or else to `crate_trail` below the carriage's goal
 (`crate_follow` on) or nowhere (off: it only moves down when the carriage
 would come too close). The carriage-crate gap never drops below `gap`:
 whichever must not catch up waits.
+
+Input shaping (Shaper, Planner.shaped): joint_1 rings at ~3.4 Hz after a
+hard stop (drivetrain compliance + backlash). The plan that is sent is the
+planned motion added to delayed copies of itself (amplitudes summing to 1,
+half a ringing period apart), so the ringing of one copy cancels the next.
+Every joint gets the same shaper, so at every instant the sent position
+is a weighted mean of the planned ones: joint, velocity and acceleration
+limits, the heading (linear in the joints) and the crate gap all still
+hold; only the collision boxes are checked again. A motion that replaces a
+running one is shaped together with the tail of the old one (Plan.before),
+so the sent trajectory stays continuous; that is also why a new plan starts
+from the old plan's planned (raw_state), not its sent, state.
 """
 
 import itertools
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -53,36 +65,106 @@ class PlanError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class Shaper:
+    """Sum of impulses: the motion is sent as sum(amps[i] * motion(t - times[i]))."""
+    times: tuple
+    amps: tuple
+
+    @property
+    def duration(self):
+        return self.times[-1]
+
+    @staticmethod
+    def make(kind, frequency=None, damping=0.0):
+        """off -> None; zv (2 impulses, half a period long) or zvd (3, one
+        period: about 4x less sensitive to a wrong frequency) for a ringing
+        at `frequency` Hz with damping ratio `damping`."""
+        if kind == "off":
+            return None
+        if kind not in ("zv", "zvd"):
+            raise ValueError(f"shaper type '{kind}' must be off, zv or zvd")
+        f, z = float(frequency), float(damping)
+        if not f > 0.0 or not 0.0 <= z < 1.0:
+            raise ValueError("shaper frequency must be > 0 Hz and damping 0 .. 1")
+        root = math.sqrt(1.0 - z * z)
+        k = math.exp(-z * math.pi / root)
+        half = 0.5 / (f * root)                 # half a damped period
+        raw = [1.0, k] if kind == "zv" else [1.0, 2.0 * k, k * k]
+        return Shaper(tuple(i * half for i in range(len(raw))),
+                      tuple(a / sum(raw) for a in raw))
+
+
 @dataclass
 class Plan:
     profiles: dict                     # z_carriage, z_crate, joint_1, joint_2, HEADING -> Profile,
                                        # all starting at t = 0
-    duration: float
+    duration: float                    # to rest, the shaper's tail included
     goal: np.ndarray                   # [z_carriage, joint_1, joint_2, joint_3]
     model: object                      # works out joint_3 from the profiles
     notes: list = field(default_factory=list)
+    shaper: Shaper = None              # None: sent as planned
+    before: object = None              # t < 0 -> raw(): the motion this one replaced
+
+    def raw(self, t):
+        """The planned (unshaped) motion of the profiles' joints at t (array).
+        Before t = 0: the replaced motion, or standing still."""
+        t = np.asarray(t, float)
+        t1 = np.atleast_1d(t)
+        out = {j: [np.array(x, float) for x in p.sample(t1)] for j, p in self.profiles.items()}
+        neg = t1 < 0.0
+        if neg.any():
+            old = self.before(t1[neg]) if self.before is not None else None
+            for j, (p, v, a) in out.items():
+                if old is not None:
+                    p[neg], v[neg], a[neg] = old[j][0], old[j][1], old[j][2]
+                else:
+                    pr = self.profiles[j]
+                    p[neg], v[neg], a[neg] = pr.p0 + pr.v0 * t1[neg], pr.v0, 0.0
+        return {j: tuple(x.reshape(t.shape) for x in s) for j, s in out.items()}
+
+    def history(self, t0):
+        """For the plan that replaces this one at t0: t -> raw(t0 + t)."""
+        span = self.shaper.duration if self.shaper else 0.0
+        src = self if t0 < span else replace(self, before=None)   # no endless chain
+        return lambda t: src.raw(t0 + np.asarray(t, float))
 
     def sample(self, t):
-        """joint -> (position, velocity, acceleration) at t (array), joint_3
-        and the HEADING included."""
-        out = {j: p.sample(t) for j, p in self.profiles.items()}
+        """joint -> (position, velocity, acceleration) at t (array) as sent,
+        joint_3 and the HEADING included."""
+        if self.shaper is None:
+            out = self.raw(t)
+        else:
+            parts = [(a, self.raw(np.asarray(t, float) - ti))
+                     for ti, a in zip(self.shaper.times, self.shaper.amps)]
+            out = {j: tuple(sum(a * r[j][k] for a, r in parts) for k in range(3))
+                   for j in self.profiles}
         out[WRIST] = self.model.wrist_motion(out[HEADING], out["joint_1"], out["joint_2"])
         return out
 
     def state(self, t):
-        """joint -> (position, velocity) at time t."""
+        """joint -> (position, velocity) at time t, as sent."""
         s = self.sample(t)
+        return {j: (float(s[j][0]), float(s[j][1])) for j in JOINTS}
+
+    def raw_state(self, t):
+        """joint -> (position, velocity) at time t, as planned: where a plan
+        that replaces this one starts."""
+        s = self.raw(t)
+        s[WRIST] = self.model.wrist_motion(s[HEADING], s["joint_1"], s["joint_2"])
         return {j: (float(s[j][0]), float(s[j][1])) for j in JOINTS}
 
 
 class Planner:
 
     def __init__(self, model, limits, gap=0.02, crate_trail=0.15, crate_follow=True,
-                 check_step=0.01, delay_step=0.02, heading="auto"):
+                 check_step=0.01, delay_step=0.02, heading="auto", shaper=None):
         """limits: joint -> (max_velocity, max_acceleration). check_step: m any
         point of the arm moves between two collision checks. heading: the
-        default for goals that do not choose one ("auto", "+y", "-y")."""
+        default for goals that do not choose one ("auto", "+y", "-y").
+        shaper: Shaper for shaped(), or None."""
         self.model = model
+        self.shaper = shaper
         self.limits = {j: (float(v), float(a)) for j, (v, a) in limits.items()}
         for j in JOINTS:
             if j not in self.limits:
@@ -134,6 +216,23 @@ class Planner:
             else:
                 choice = 1
         return math.copysign(math.pi / 2, choice)
+
+    def shaped(self, plan, before=None):
+        """`plan` as it is sent: through the shaper (if one is set), joined to
+        the motion it replaces (`before`: Plan.history of that motion, None
+        from rest). The shaped path is checked against the collision boxes
+        again; if it hits one, a plan from rest is sent unshaped instead."""
+        if self.shaper is None or plan.duration < 1e-9:
+            return plan
+        out = replace(plan, duration=plan.duration + self.shaper.duration,
+                      shaper=self.shaper, before=before)
+        t = np.linspace(0.0, out.duration, max(int(math.ceil(out.duration / self.check_dt)), 1) + 1)
+        s = out.sample(t)
+        if self._ok({j: s[j][0] for j in plan.profiles}).all():
+            return out
+        if before is None:
+            return replace(plan, notes=plan.notes + ["not shaped: the shaped path collides"])
+        raise PlanError("the shaped path from the running motion collides")
 
     def _from(self, start, plan):
         """plan(start), or - if the robot is moving and there is no way on

@@ -770,7 +770,7 @@ void CanopyagSystem::collect_replies(Clock::time_point now)
       if (st && (*st == mks::kMoveFailed || *st == mks::kMoveLimit)) {
         raise_fault(
           "joint '" + j->cfg.name + "' (CAN ID " + std::to_string(id) + "): F5 " +
-          (*st == mks::kMoveFailed ? "REJECTED (status 0): not enabled, wrong Mode (needs SR_vFOC), "
+          (*st == mks::kMoveFailed ? "REJECTED (status 0): not enabled, wrong Mode (needs SR_CLOSE or SR_vFOC), "
           "stall protection, or the driver refuses a new target mid-move" :
           "stopped by end limit (status 3)"));
         return;

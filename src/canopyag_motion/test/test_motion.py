@@ -323,9 +323,15 @@ def test_joint_3_holds_the_heading(model, planner):
     assert np.ptp(s[WRIST][0]) > 2.0        # joint_3 turned most of a half turn
 
 
-def test_simultaneous(model, planner):
+def test_simultaneous(loaded):
     """No wait needed: every joint starts at once and the move takes as long
-    as its slowest joint alone."""
+    as its slowest joint alone. joint_3 never sets the pace here, whatever its
+    motion.yaml limits: the time stretch for it has its own test."""
+    model, planner, cfg = loaded
+    planner = canopyag_motion.Planner(
+        model, dict(planner.limits, joint_3=(20.0, 100.0)), gap=planner.gap,
+        crate_trail=planner.crate_trail, crate_follow=planner.crate_follow,
+        check_step=cfg["collision"]["step"])
     start = pointing(model, PLUS_Y)
     plan = planner.to_joints(start, (0.3, DEG(40), DEG(30)), heading=1)
     check_plan(model, planner, plan, start, PLUS_Y)
@@ -522,3 +528,86 @@ def test_new_goal_while_moving(model, planner):
         check_plan(model, planner, plan, start)
         stop = planner.stop(start)
         check_plan(model, planner, stop, start)
+
+
+# ---------------------------------------------------------------- input shaping
+
+def shaping(model, planner, kind="zvd", hz=3.4, zeta=0.075):
+    return canopyag_motion.Planner(model, planner.limits, gap=planner.gap,
+                                   crate_trail=planner.crate_trail,
+                                   shaper=canopyag_motion.Shaper.make(kind, hz, zeta))
+
+
+def ringing(plan, joint, hz, zeta):
+    """Residual swing of a link on a spring (hz, zeta) driven by the sent
+    `joint` after the plan has ended: the peak of |link - goal| over 2 s."""
+    dt, w = 1e-4, 2 * math.pi * hz
+    t = np.arange(0.0, plan.duration + 2.0, dt)
+    r, v, _ = plan.sample(t)[joint]
+    y, yd, peak = float(r[0]), float(v[0]), 0.0
+    for k in range(t.size):
+        ydd = w * w * (r[k] - y) + 2 * zeta * w * (v[k] - yd)
+        yd += ydd * dt
+        y += yd * dt
+        if t[k] > plan.duration:
+            peak = max(peak, abs(y - r[-1]))
+    return peak
+
+
+def test_shaper_impulses():
+    zv = canopyag_motion.Shaper.make("zv", 3.4, 0.0)
+    assert zv.times == pytest.approx((0.0, 0.5 / 3.4)) and zv.amps == pytest.approx((0.5, 0.5))
+    zvd = canopyag_motion.Shaper.make("zvd", 3.4, 0.075)
+    assert sum(zvd.amps) == pytest.approx(1.0) and len(zvd.times) == 3
+    assert zvd.amps[0] > zvd.amps[2] and zvd.duration == pytest.approx(2 * zv.duration, rel=0.01)
+    assert canopyag_motion.Shaper.make("off") is None
+    for bad in (("zz", 3.4, 0.1), ("zv", 0.0, 0.1), ("zv", 3.4, 1.0)):
+        with pytest.raises(ValueError):
+            canopyag_motion.Shaper.make(*bad)
+
+
+def test_motion_yaml_shaper(planner):
+    # motion.yaml has the shaper off: plans are sent as planned
+    assert planner.shaper is None
+    plan = planner.to_point(rest(), FRUIT[0])
+    assert planner.shaped(plan) is plan
+
+
+@pytest.mark.parametrize("point", FRUIT)
+def test_shaped_plan_keeps_every_limit(model, planner, point):
+    """Shaped: same start, same goal, a shaper period longer, and still
+    within every limit, collision-free, the gripper at its heading."""
+    p = shaping(model, planner)
+    raw = p.to_point(rest(), point)
+    plan = p.shaped(raw)
+    assert plan.duration == pytest.approx(raw.duration + p.shaper.duration)
+    check_plan(model, p, plan, rest())
+
+
+def test_shaper_cancels_the_ringing(model, planner):
+    """joint_1 on a 3.4 Hz spring: the shaped move leaves next to no ringing,
+    and ZVD still most of the way at a frequency 12 % off."""
+    raw = planner.to_point(rest(), FRUIT[0])
+    for kind, hz, most in (("zv", 3.4, 0.05), ("zvd", 3.4, 0.05), ("zvd", 3.0, 0.25),
+                           ("zvd", 3.8, 0.25)):
+        base = ringing(raw, "joint_1", hz, 0.075)
+        assert base > 1e-3
+        plan = shaping(model, planner, kind).shaped(raw)
+        assert ringing(plan, "joint_1", hz, 0.075) < most * base, (kind, hz)
+
+
+def test_shaped_new_goal_while_moving_is_continuous(model, planner):
+    """A new goal mid-move starts from the running plan's planned state and
+    is shaped together with its tail: the sent motion has no jump."""
+    p = shaping(model, planner)
+    first = p.shaped(p.to_point(rest(), FRUIT[0]))
+    for f in (0.1, 0.5, 0.8):
+        t0 = f * first.duration
+        nxt = p.shaped(p.to_point(first.raw_state(t0), FRUIT[3]), first.history(t0))
+        for j, (pos, vel) in first.state(t0).items():
+            assert nxt.state(0.0)[j] == pytest.approx((pos, vel), abs=1e-9), (f, j)
+        stop = p.shaped(p.stop(first.raw_state(t0)), first.history(t0))
+        assert stop.state(0.0)["joint_1"] == pytest.approx(first.state(t0)["joint_1"], abs=1e-9)
+        assert all(abs(v) < 1e-9 for _, v in stop.state(stop.duration).values())
+        s = nxt.sample(np.linspace(0.0, nxt.duration, 400))
+        assert not model.collisions({j: s[j][0] for j in JOINTS}).any()

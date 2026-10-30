@@ -33,8 +33,7 @@ meshes:
   scale: [1.0, 1.0, 1.0]
   # false -> collision reuses the visual mesh (fine for RViz).
   # true  -> collision uses collision_dir, which must hold decimated copies.
-  #          Do that before running Gazebo; raw exports are ~25k triangles
-  #          a link and the physics step will crawl.
+  #          Raw exports are ~25k triangles a link.
   use_collision_meshes: false
 
 materials:
@@ -45,8 +44,7 @@ materials:
 # other side of the gantry. `mass` is the counterweight itself; when it
 # equals the mass that joint carries, the axis feels no gravity load.
 # The links keep their real mass and inertia either way - only gravity along
-# the axis is offset. Gazebo applies it as a constant upward force on the
-# joint's child link (see canopyag_bringup/launch/gazebo.launch.py).
+# the axis is offset. Only a record of the robot for now: nothing reads it.
 counterweights:
   z_carriage:
     note: |-

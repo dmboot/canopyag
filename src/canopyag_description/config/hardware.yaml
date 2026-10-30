@@ -2,8 +2,8 @@
 # canopyag - joint <-> motor mapping for the real robot (canopyag_hardware)
 # ===========================================================================
 # The ONE file to edit when motors, gearing or CAN IDs change. It is only read
-# when the xacro selects the real plugin (sim:=false mock:=false); Gazebo and
-# mock hardware never see it. It is NOT touched by import_solidworks_urdf.py.
+# when the xacro selects the real plugin (mock:=false); mock hardware never
+# sees it. It is NOT touched by import_solidworks_urdf.py.
 #
 # Every value you are expected to change is marked  # <-- EDIT
 #
@@ -21,7 +21,10 @@
 #                         rev (after any gearbox)        -> 1 / L
 #   reversed            true if a positive joint command turns the motor the
 #                       wrong way
-#   max_motor_rpm       safety cap on the speed sent in every F5 (<= 3000).
+#   max_motor_rpm       safety cap on the speed sent in every F5. The driver's
+#                       Mode caps it too: SR_CLOSE 1500, SR_vFOC 3000 (the
+#                       drivers run SR_CLOSE). Above the Mode's cap the driver
+#                       silently runs at the cap, so keep this <= 1500.
 #                       A trajectory faster than this lags, and the trajectory
 #                       controller aborts on its path tolerance. Keep it low for
 #                       bring-up; raise it once direction and scaling are checked.
@@ -47,14 +50,13 @@ hardware:
 joints:
   z_carriage:
     mode: can                   # <-- EDIT
-    can_id: 1                   # <-- EDIT
-    # 5:1 gearbox -> GT2 belt (2 mm pitch, 6 mm wide) on a 20-tooth pulley:
-    #   L = 20 * 0.002 m / 5 = 0.008 m per motor rev -> 1 / L = 125
-    # (other pulleys: 16T -> 156.25, 30T -> 83.333)
-    motor_revs_per_unit: 125.0  # <-- EDIT
-    reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 2000         # <-- EDIT: 2000 rpm = 0.27 m/s at 125 rev/m
-    acceleration: 252           # <-- EDIT: 5000 rpm/s = 0.67 m/s^2 (joint_limits: 0.5)
+    can_id: 2                   # <-- EDIT
+    # 2:1 gearbox -> GT2 belt (2 mm pitch, 6 mm wide) on a 20-tooth pulley:
+    #   L = 20 * 0.002 m / 2 = 0.02 m per motor rev -> 1 / L = 50
+    motor_revs_per_unit: 50.0   # <-- EDIT
+    reversed: false             # <-- EDIT
+    max_motor_rpm: 1500         # <-- EDIT: 1500 rpm = 0.5 m/s at 50 rev/m (SR_CLOSE cap)
+    acceleration: 252           # <-- EDIT: 5000 rpm/s = 1.67 m/s^2 at 50 rev/m
     initial_position: 0.0       # <-- EDIT
 
   joint_1:
@@ -62,18 +64,22 @@ joints:
     can_id: 3                   # <-- EDIT
     # 9.6:1 gearbox: 9.6 / (2 pi)
     motor_revs_per_unit: 1.5278874536821951  # <-- EDIT
-    reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 900          # <-- EDIT: 900 rpm = 9.8 rad/s at the link
-    acceleration: 240           # <-- EDIT: 1250 rpm/s = 13.6 rad/s^2 (joint_limits: 5)
+    reversed: true              # <-- EDIT (check on the first move)
+    max_motor_rpm: 1000         # <-- EDIT: 1000 rpm = 10.9 rad/s at the link
+    # 230 not 240: under SR_vFOC 240 rang at ~3.4 Hz after every stop, 230
+    # barely (tune_vfoc_joint1.py, 2026-10-28). Not re-measured in SR_CLOSE.
+    # Keep it above motion.yaml's 6 rad/s^2.
+    acceleration: 230           # <-- EDIT: 769 rpm/s = 8.4 rad/s^2
     initial_position: 0.0       # <-- EDIT
 
   z_crate:
-    mode: can                   # <-- EDIT
-    can_id: 2                   # <-- EDIT
-    motor_revs_per_unit: 125.0  # <-- EDIT: TODO transmission unknown
+    mode: virtual               # <-- EDIT
+    can_id: 1                   # <-- EDIT
+    # 4:1 gearbox
+    motor_revs_per_unit: 100.0  # <-- EDIT 
     reversed: false             # <-- EDIT
-    max_motor_rpm: 1500         # <-- EDIT: 0.2 m/s at 125 rev/m
-    acceleration: 250           # <-- EDIT: 3333 rpm/s = 0.44 m/s^2
+    max_motor_rpm: 1000         # <-- EDIT: 0.16667 m/s at 100 rev/m
+    acceleration: 250           # <-- EDIT: 3333 rpm/s = 0.55 m/s^2
     initial_position: 0.0       # <-- EDIT
 
   joint_2:
@@ -81,20 +87,17 @@ joints:
     can_id: 4                   # <-- EDIT
     # 12:1 gearbox: 12 / (2 pi)
     motor_revs_per_unit: 1.909859317102744  # <-- EDIT
-    reversed: true             # <-- EDIT
+    reversed: false             # <-- EDIT
     max_motor_rpm: 900          # <-- EDIT: 900 rpm = 7.9 rad/s at the link
-    acceleration: 240           # <-- EDIT: 1250 rpm/s = 10.9 rad/s^2 (joint_limits: 5)
+    acceleration: 240           # <-- EDIT: 1250 rpm/s = 10.9 rad/s^2
     initial_position: 0.0       # <-- EDIT
 
-  # Wrist yaw (end_effector): NEMA17 on an MKS SERVO42D, daisy-chained on the
-  # same bus. Home (0) = gripper along link 2; robot_parameters.yaml limits it
-  # to +-270 deg for the cables.
   joint_3:
     mode: can                   # <-- EDIT
     can_id: 5                   # <-- EDIT
     # 5:1 gearbox: 5 / (2 pi)
     motor_revs_per_unit: 0.7957747154594768  # <-- EDIT
-    reversed: false             # <-- EDIT (check on the first move)
-    max_motor_rpm: 400          # <-- EDIT: 400 rpm = 8.4 rad/s at the wrist (motion.yaml: 6)
-    acceleration: 240           # <-- EDIT: 1250 rpm/s = 26 rad/s^2 (motion.yaml: 15)
+    reversed: false             # <-- EDIT
+    max_motor_rpm: 400          # <-- EDIT: 400 rpm = 8.4 rad/s at the wrist 
+    acceleration: 240           # <-- EDIT: 1250 rpm/s = 26 rad/s^2
     initial_position: 0.0       # <-- EDIT

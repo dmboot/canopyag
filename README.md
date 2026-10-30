@@ -3,27 +3,28 @@
 ROS 2 stack for the canopy.ag harvesting robot: a vertical gantry carrying a
 SCARA arm, plus a crate that rides the same gantry.
 
-Target: **ROS 2 Humble / Ubuntu 22.04 / Gazebo Fortress**
+Target: **ROS 2 Humble / Ubuntu 22.04**
 
 ```
 world
 └── gantry
-    ├── z_carriage  prismatic   0 .. 0.446 m    carriage          CAN ID 1  real motor
+    ├── z_carriage  prismatic   0 .. 0.446 m    carriage          CAN ID 2  real motor
     │   └── joint_1  revolute   ±2.094 rad      mid_link          CAN ID 3  real motor
     │       └── joint_2  revolute   ±π rad          endeffector_link  CAN ID 4  real motor
     │           └── joint_3  revolute   ±4.712 rad (±270°)  end_effector  CAN ID 5  real motor (wrist yaw)
-    └── z_crate     prismatic   0 .. 0.4804 m   crate             CAN ID 2  real motor
+    └── z_crate     prismatic   0 .. 0.4804 m   crate             CAN ID 1  virtual (not mounted yet)
 ```
 
 `joint_3` is the wrist yaw: a NEMA17 on an MKS SERVO42D, 5:1, on the same CAN
 bus. It turns the gripper about a vertical axis at the end of link 2. The
 gripper points along `end_effector`'s +x; its pitch and the gripper itself
-are not in the URDF and will be driven on their own. Its ±270° are set by
-hand in `robot_parameters.yaml` for the cables (to measure, see **Next**).
+are not in the URDF and will be driven on their own. Its ±270° (measured
+for the cables) are set by hand in `robot_parameters.yaml`.
 
 A joint can also be `mode: virtual` in `hardware.yaml` (no motor yet): the
 plugin then copies its command to its state, so the controllers and
-canopyag_motion work as if it were there. Today every joint is real.
+canopyag_motion work as if it were there. Today that is `z_crate`: its
+motor (4:1) is not mounted yet.
 
 ## Build
 
@@ -83,7 +84,7 @@ purpose. Pick one way of moving the robot:
 ### Move to a point
 
 `canopyag_motion` moves the **tool point** (`motion.yaml`: the gripper tip,
-0.21 m out from `joint_3`'s axis) to a point in the `world` frame, as fast
+0.21 m out from `joint_3`'s axis, measured) to a point in the `world` frame, as fast
 as the joint limits allow, every joint at the same time. **The gripper
 always points along world +y or -y** (the *heading*): by default to the
 side of joint_1 the goal is on, or as the goal says. `joint_3` is not moved
@@ -177,7 +178,7 @@ either). Run `colcon build --symlink-install` after adding files.
 | **choose where the gripper points** | per goal, or `motion.yaml` `heading.default` | `move_to.py ... --heading=+y` / `--heading=-y`, `MoveTo.heading`, the panel's *gripper to*; the default `auto` is the side of joint_1 the goal is on |
 | show the pitch wiggle and grip in the demo | launch argument | `dexterity:=true` (default on in `demo.launch.py`, off in `motion.launch.py`). Needs a `gripper_controller` (FollowJointTrajectory, joints `wrist_pitch`, `gripper`: `demo.py` parameters `gripper_controller`, `gripper_joints`, `grip_open`, `grip_closed`); without it the demo says so once and goes on |
 | **move faster** (`canopyag_motion`) | `canopyag_motion/config/motion.yaml` `limits` | velocity and acceleration per joint; keep them under the motor limits below |
-| set where the tool point is | `motion.yaml` `tool` | the gripper tip in `end_effector`'s frame, pitch at 0 (now 0.21 m along +x) |
+| set where the tool point is | `motion.yaml` `tool` | the gripper tip in `end_effector`'s frame, pitch at 0 (now 0.21 m along +x, measured) |
 | **limit how far the wrist turns** | `robot_parameters.yaml` `joints.joint_3.limit` `lower` / `upper` | the cable range from home (gripper along link 2); kept on a re-import. canopyag_motion needs at least ±π; less than ±270° makes some folds turn the gripper a full turn on the way |
 | make the wrist faster / slower | `motion.yaml` `limits.joint_3` | also the limit for turning the heading. A move that would turn `joint_3` faster runs slower as a whole (note `slowed to …`) |
 | change how close the arm may come to itself | `motion.yaml` `collision.margin` | m added around every collision box (now 2 cm). The gripper hangs below link 1 and the carriage, so with the gripper to the side the fold under link 1 is clear; close to the gantry the gripper box is what hits first |
@@ -190,11 +191,11 @@ Current motors (`hardware.yaml`):
 
 | joint | CAN ID | transmission | `motor_revs_per_unit` | `reversed` | checked |
 |---|---|---|---|---|---|
-| `joint_1` | 3 | 9.6:1 | 1.528 rev/rad | false | direction, scaling |
-| `joint_2` | 4 | 12:1 | 1.910 rev/rad | true | direction, scaling |
-| `z_carriage` | 1 | 5:1 + GT2 belt, 20T pulley (8 mm per motor rev) | 125 rev/m | false | not yet |
-| `z_crate` | 2 | TODO | 125 rev/m (placeholder) | false | not yet |
-| `joint_3` | 5 | NEMA17 on an MKS SERVO42D, 5:1 | 0.796 rev/rad | false | not yet: direction, scaling, cable range |
+| `joint_1` | 3 | 9.6:1 | 1.528 rev/rad | true | direction, scaling |
+| `joint_2` | 4 | 12:1 | 1.910 rev/rad | false | direction, scaling |
+| `z_carriage` | 2 | 2:1 + GT2 belt, 20T pulley (20 mm per motor rev) | 50 rev/m | false | direction, scaling (10 motor revs = 20 cm) |
+| `z_crate` | 1 | 4:1 + GT2 belt, 20T pulley (10 mm per motor rev) | 100 rev/m | false | not mounted: `mode: virtual` |
+| `joint_3` | 5 | NEMA17 on an MKS SERVO42D, 5:1 | 0.796 rev/rad | false | direction, scaling, cable range (±270°) |
 
 ## Test without the robot
 
@@ -204,7 +205,6 @@ Current motors (`hardware.yaml`):
 | the demo on mock hardware | `ros2 launch canopyag_motion demo.launch.py` (`side:=left`, `loop:=true`, `speed:=`, `dexterity:=false`) |
 | **pick goals in a window on mock hardware** | `ros2 launch canopyag_motion demo.launch.py demo:=false panel:=true` |
 | send goals on mock hardware | `ros2 launch canopyag_motion demo.launch.py demo:=false`, then `move_to.py` / Publish Point as in **Move to a point** |
-| Gazebo | `ros2 launch canopyag_bringup gazebo.launch.py` |
 | the real-robot stack on simulated drivers | see below |
 | all tests | `colcon test && colcon test-result --verbose` |
 
@@ -263,14 +263,14 @@ The export writes a prismatic joint's limits as heights above the gantry base
 | package | what's in it |
 |---|---|
 | `canopyag_description` | URDF/xacro built from `robot_parameters.yaml`, meshes, `controllers.yaml`, `hardware.yaml` |
-| `canopyag_bringup` | `hardware.launch.py`, `mock.launch.py`, `gazebo.launch.py`, the vcan0 launch test |
+| `canopyag_bringup` | `hardware.launch.py`, `mock.launch.py`, the vcan0 launch test |
 | `canopyag_hardware` | the ros2_control plugin for the MKS SERVO57D / SERVO42D drivers, `mks_sim.py`, `ghost_state.py` |
 | `canopyag_motion` | goals in world coordinates: `motion_server.py`, `goal_panel.py`, `move_to.py`, `demo.py`; `motion.yaml` |
 | `canopyag_interfaces` | the `MoveTo` action |
 
 Everything goes through ros2_control, so the controllers and canopyag_motion
-are the same on mock hardware, in Gazebo and on the robot. Only the hardware
-plugin changes.
+are the same on mock hardware and on the robot. Only the hardware plugin
+changes.
 
 **canopyag_motion** has no sampling-based planner; the robot is simple
 enough not to need one. The inverse kinematics stay closed-form: for the
@@ -317,25 +317,26 @@ does not fit the plugin warns (`CAN cycle takes … ms`) and suggests a rate.
 
 CAN wiring: CAN_H to CAN_L measures 60 Ω with the power off, with a 120 Ω
 terminator at each physical end of the chain (adapter and last driver). Every
-driver: `Mode = SR_vFOC`, `CanRate = 500K`, a unique `CanID`, `Respon` and
-`Active` on.
+driver: `Mode = SR_CLOSE`, `MStep = 64`, `CanRate = 500K`, a unique `CanID`,
+`Respon` and `Active` on.
+
+- `SR_CLOSE` instead of `SR_vFOC`: vFOC was hard to tune against the
+  mechanical disturbances and backlash. `SR_CLOSE` caps the speed at 1500
+  motor rpm, so `max_motor_rpm` is never above 1500.
+- `MStep` 16, 32 or 64 only. The F5 position is in encoder counts (16384 a
+  rev) whatever MStep is, but the F5 speed is calibrated for 16/32/64 only:
+  at 128 a speed of 1200 runs at 150 rpm.
+- `SR_CLOSE` drives the coil at a fixed `Ma` (vFOC only uses what the load
+  needs), and at `HoldMa` × `Ma` while standing still. Set `Ma` to the
+  motor's rated current or lower, never above it.
 
 ## Next
 
-1. **z_carriage:** small steps, then check 125 rev/m with a tape measure,
-   and the direction.
-2. **z_crate:** fill in its transmission, then the same.
-3. **joint_3 (wrist yaw, CAN ID 5):** direction (`reversed`) and the 5:1
-   scaling (command 1.571 rad, check 90°), then the cable range from home:
-   set `joints.joint_3.limit` in `robot_parameters.yaml` to it.
-4. **Gripper tip:** measure it in `end_effector`'s frame with the pitch at 0
-   and set `motion.yaml` `tool.xyz` (now 0.21 m along +x, from the CAD).
-5. **can_rate_hz with 5 motors:** watch for `CAN cycle takes … ms` and use
+1. **z_crate motor:** once it is mounted, `mode: can` in `hardware.yaml`,
+   then small steps: the direction, and 100 rev/m with a tape measure
+   (10 motor revs = 10 cm).
+2. **can_rate_hz with 5 motors:** watch for `CAN cycle takes … ms` and use
    the rate it suggests.
-6. **Crate control:** how the crate should move with the arm. For now it
-   stays at 0 and moves only by hand (panel slider).
-7. Real joint limits, efforts and velocities. The current ones are guesses,
-   the wrist's 6 rad/s and 15 rad/s² too.
-8. Pitch and gripper: their motors, joints and a `gripper_controller`; then
+3. Pitch and gripper: their motors, joints and a `gripper_controller`; then
    `dexterity:=true` on the robot.
-9. Homing against the limit switches, to replace zero-at-startup.
+4. Homing against the limit switches, to replace zero-at-startup.

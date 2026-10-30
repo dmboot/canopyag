@@ -13,10 +13,6 @@ points at another copy of it.
 ZERO AT STARTUP: every joint's position when the hardware activates is taken
 as its initial_position (0.0 = URDF home). Power the drivers on with the
 robot at home.
-
-Note there is no controller_manager node in gazebo.launch.py and there IS one
-here: in simulation the gz_ros2_control plugin hosts it inside the sim process.
-That asymmetry is the only structural difference between sim and hardware.
 """
 
 from launch import LaunchDescription
@@ -43,7 +39,6 @@ def generate_launch_description():
         Command([
             "xacro ",
             PathJoinSubstitution([desc_pkg, "urdf", "canopyag.urdf.xacro"]),
-            " sim:=false",
             " can_interface:=", can_interface,
             " can_bitrate:=", can_bitrate,
             " hardware_file:=", LaunchConfiguration("hardware_file"),

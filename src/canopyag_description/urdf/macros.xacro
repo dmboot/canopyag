@@ -103,7 +103,7 @@
         <xacro:property name="D" value="${J['dynamics']}"/>
         <axis xyz="${A[0]} ${A[1]} ${A[2]}"/>
         <!-- A continuous joint has no lower/upper, but still needs effort and
-             velocity for the controllers and for Gazebo. -->
+             velocity for the controllers. -->
         <xacro:if value="${J['type'] == 'continuous'}">
           <limit effort="${Lm['effort']}" velocity="${Lm['velocity']}"/>
         </xacro:if>

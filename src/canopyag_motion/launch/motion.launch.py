@@ -6,8 +6,8 @@
     ros2 launch canopyag_motion motion.launch.py demo:=true dexterity:=true   # + pitch / grip
 
 Works on whatever runs the controllers: hardware.launch.py (real robot,
-activate arm_controller first), mock.launch.py, gazebo.launch.py
-(use_sim_time:=true). For mock + server + demo in one go: demo.launch.py.
+activate arm_controller first) or mock.launch.py. For mock + server + demo in
+one go: demo.launch.py.
 """
 
 from launch import LaunchDescription
@@ -19,7 +19,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
     return LaunchDescription([
         DeclareLaunchArgument("demo", default_value="false", description="Run the demo path."),
         DeclareLaunchArgument("loop", default_value="false",
@@ -34,12 +33,9 @@ def generate_launch_description():
                                           "gripper_controller. Off until those motors exist."),
         DeclareLaunchArgument("panel", default_value="false",
                               description="Open goal_panel.py: x/y/z sliders to send goals."),
-        DeclareLaunchArgument("use_sim_time", default_value="false",
-                              description="true with gazebo.launch.py"),
         Node(
             package="canopyag_motion",
             executable="motion_server.py",
-            parameters=[{"use_sim_time": sim_time}],
             output="screen",
         ),
         Node(
@@ -49,15 +45,13 @@ def generate_launch_description():
                          "speed": ParameterValue(LaunchConfiguration("speed"), value_type=float),
                          "side": LaunchConfiguration("side"),
                          "dexterity": ParameterValue(LaunchConfiguration("dexterity"),
-                                                     value_type=bool),
-                         "use_sim_time": sim_time}],
+                                                     value_type=bool)}],
             condition=IfCondition(LaunchConfiguration("demo")),
             output="screen",
         ),
         Node(
             package="canopyag_motion",
             executable="goal_panel.py",
-            parameters=[{"use_sim_time": sim_time}],
             condition=IfCondition(LaunchConfiguration("panel")),
             output="screen",
         ),

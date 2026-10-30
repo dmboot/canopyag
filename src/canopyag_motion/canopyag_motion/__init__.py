@@ -10,7 +10,7 @@ as its limits allow, all joints at once, clear of its own collision boxes.
 import yaml
 
 from .model import ARM, CRATE, HEADING, JOINTS, WRIST, Model, ModelError  # noqa: F401
-from .planner import HEADINGS, Plan, PlanError, Planner                  # noqa: F401
+from .planner import HEADINGS, Plan, PlanError, Planner, Shaper          # noqa: F401
 
 
 def load(robot_parameters, motion_config):
@@ -23,7 +23,11 @@ def load(robot_parameters, motion_config):
     model = Model(params, cfg["tool"]["link"], cfg["tool"]["xyz"], col["margin"],
                   col.get("ignore", []))
     limits = {j: (L["velocity"], L["acceleration"]) for j, L in cfg["limits"].items()}
+    sh = cfg.get("shaper") or {"type": "off"}
+    kind = sh.get("type", "off")
+    kind = "off" if kind is False else str(kind)      # YAML reads a bare off as false
+    shaper = Shaper.make(kind, sh.get("frequency"), sh.get("damping", 0.0))
     planner = Planner(model, limits, gap=crate["gap"], crate_trail=crate["trail"],
                       crate_follow=crate["follow"], check_step=col["step"],
-                      heading=str(cfg.get("heading", {}).get("default", "auto")))
+                      heading=str(cfg.get("heading", {}).get("default", "auto")), shaper=shaper)
     return model, planner, cfg

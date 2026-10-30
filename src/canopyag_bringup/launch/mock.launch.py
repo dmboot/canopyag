@@ -24,7 +24,7 @@ def generate_launch_description():
     desc_pkg = FindPackageShare("canopyag_description")
     robot_description = ParameterValue(
         Command(["xacro ", PathJoinSubstitution([desc_pkg, "urdf", "canopyag.urdf.xacro"]),
-                 " sim:=false mock:=true"]),
+                 " mock:=true"]),
         value_type=str)
     controllers = PathJoinSubstitution([desc_pkg, "config", "controllers.yaml"])
 

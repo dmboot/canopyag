@@ -11,11 +11,11 @@
 
 # The tool point: what "move to (x, y, z)" puts there. The gripper tip, a
 # point in `link`'s frame with the pitch at 0: end_effector (joint_3's link)
-# or a link after it. The gripper points along that link's +x; from the CAD
-# the tip is 0.21 m out along it from joint_3's axis.
+# or a link after it. The gripper points along that link's +x; the tip is
+# 0.21 m out along it from joint_3's axis (measured on the robot).
 tool:
   link: end_effector
-  xyz: [0.21, 0.0, -0.008]      # <-- EDIT: measure the real tip
+  xyz: [0.21, 0.0, -0.008]      # <-- EDIT
 
 # Which way the gripper points: along world +y or -y, never anything else.
 # joint_3 holds it there through every move (it is not planned on its own).
@@ -28,16 +28,18 @@ heading:
 
 # Top speed and acceleration of every joint (m, rad). Each joint moves at
 # these, all at the same time. Keep them below what the motors can do:
-# canopyag_description/config/hardware.yaml (max_motor_rpm, acceleration).
+# canopyag_description/config/hardware.yaml (max_motor_rpm, acceleration),
+# with room for the plugin's catch-up speed on top.
 limits:
-  z_carriage: {velocity: 0.25, acceleration: 0.5}   # <-- EDIT
-  z_crate:    {velocity: 0.25, acceleration: 0.5}   # <-- EDIT
-  joint_1:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
-  joint_2:    {velocity: 3.5, acceleration: 5.0}    # <-- EDIT
+  # 0.4 m/s = 1200 motor rpm: SR_CLOSE tops out at 1500 (hardware.yaml).
+  z_carriage: {velocity: 0.4, acceleration: 0.8}   # <-- EDIT
+  z_crate:    {velocity: 0.1, acceleration: 0.2}   # <-- EDIT
+  joint_1:    {velocity: 4.0, acceleration: 6.0}    # <-- EDIT
+  joint_2:    {velocity: 6.0, acceleration: 5.0}    # <-- EDIT
   # The wrist yaw. Also the limits for turning the heading (switching sides).
   # joint_3 moves with joint_1 and joint_2 to hold the heading; a plan that
   # would make it faster than this runs slower as a whole.
-  joint_3:    {velocity: 6.0, acceleration: 15.0}   # <-- EDIT
+  joint_3:    {velocity: 6.0, acceleration: 10.0}   # <-- EDIT
 
 collision:
   # Every collision box grows by this on every side. It covers the real robot
@@ -60,6 +62,21 @@ crate:
   follow: false                 # <-- EDIT
   trail: 0.15                   # <-- EDIT: m, carriage goal - crate goal
   gap: 0.02                     # <-- EDIT: m, carriage - crate never less
+
+# Input shaping against joint_1's ringing after a stop (planner.py). Off
+# since the drivers moved from SR_vFOC to SR_CLOSE (2026-10-30): the numbers
+# below were measured under vFOC. Every
+# move is sent as the planned motion plus delayed copies of itself, timed so
+# the ringing cancels: zv adds half a ringing period to each move (0.15 s at
+# 3.4 Hz), zvd a whole period (0.30 s) but is about 4x less sensitive to a
+# frequency that is a bit off (other arm poses ring at other frequencies).
+# Measure the ringing with ~/nema_test/tune_vfoc_joint1.py --acc 240: it
+# prints the frequency and damping. 2026-10-28, joint_2 at home: 3.30-3.59 Hz,
+# damping 0.06-0.09.
+shaper:
+  type: off                     # <-- EDIT: off | zv | zvd
+  frequency: 3.4                # <-- EDIT: Hz
+  damping: 0.075                # <-- EDIT: damping ratio, 0 .. 1
 
 execution:
   # Planning takes a few ms; the motion starts this long after the goal

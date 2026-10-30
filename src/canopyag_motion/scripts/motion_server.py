@@ -195,15 +195,24 @@ class MotionServer(Node):
     # ------------------------------------------------------------------ motion
 
     def state_at(self, t):
-        """joint -> (position, velocity) at time t: from the running motion if
-        there is one, otherwise the measured position at rest."""
+        """joint -> (position, velocity) at time t: the running motion's
+        PLANNED state if there is one (its sent state lags behind it by the
+        input shaper; see planner.py), otherwise the measured position at rest."""
         cur = self.current
         if cur is not None and not cur.done.is_set():
-            return cur.plan.state(cur.elapsed(t))
+            return cur.plan.raw_state(cur.elapsed(t))
         missing = [j for j in JOINTS if j not in self.measured]
         if missing:
             raise RuntimeError(f"no /joint_states for {', '.join(missing)} yet")
         return {j: (self.measured[j], 0.0) for j in JOINTS}
+
+    def history_at(self, t):
+        """What a plan starting at time t is shaped together with: the running
+        motion's tail, or None from rest."""
+        cur = self.current
+        if cur is not None and not cur.done.is_set():
+            return cur.plan.history(cur.elapsed(t))
+        return None
 
     def arm_goal(self, start):
         """[z_carriage, joint_1, joint_2, joint_3] the arm is on its way to:
@@ -259,6 +268,7 @@ class MotionServer(Node):
                 what += f" heading {HEADING_NAME.get(heading, heading)}"
                 if crate is not None:
                     what += f", crate {crate:.3f} m"
+            plan = self.planner.shaped(plan, self.history_at(t0))
             return self.send(plan, t0, f"{what} [planned in {1000 * took:.0f} ms]",
                              goal if kind == "point" else None)
 
@@ -267,7 +277,8 @@ class MotionServer(Node):
             if self.current is not motion or motion.done.is_set():
                 return None
             t0 = self.get_clock().now() + RclDuration(seconds=self.start_delay)
-            plan = self.planner.stop(motion.plan.state(motion.elapsed(t0)))
+            plan = self.planner.stop(motion.plan.raw_state(motion.elapsed(t0)))
+            plan = self.planner.shaped(plan, motion.plan.history(motion.elapsed(t0)))
             return self.send(plan, t0, "stop", None)
 
     def send(self, plan, t0, what, point):
