@@ -45,7 +45,7 @@ collision:
   # Every collision box grows by this on every side. It covers the real robot
   # lagging its trajectory a little, and the box corners the check skips
   # between two samples.
-  margin: 0.02                  # <-- EDIT: m
+  margin: 0.01                  # <-- EDIT: m
   # Check the path every time any point of the arm has moved this far.
   step: 0.01                    # <-- EDIT: m
   # Never checked against each other. The carriage and the crate are kept
@@ -59,9 +59,9 @@ crate:
   # (at home: 0) and moves it only when the carriage would come closer than
   # `gap`. Either way a goal can send it somewhere (MoveTo crate, the goal
   # panel's crate slider).
-  follow: false                 # <-- EDIT
-  trail: 0.15                   # <-- EDIT: m, carriage goal - crate goal
-  gap: 0.02                     # <-- EDIT: m, carriage - crate never less
+  follow: true                 # <-- EDIT
+  trail: 0.1                   # <-- EDIT: m, carriage goal - crate goal
+  gap: 0.01                     # <-- EDIT: m, carriage - crate never less
 
 # Input shaping against joint_1's ringing after a stop (planner.py). Off
 # since the drivers moved from SR_vFOC to SR_CLOSE (2026-10-30): the numbers

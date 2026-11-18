@@ -80,50 +80,48 @@ links:
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     collision_box: {size: [0.0859, 0.342, 0.1944], xyz: [-0.03275, 0.0, 0.0578]}
-    mass: 0.598668211
-    com_xyz: [-0.013456256, 6.939e-06, 0.084943201]
+    mass: 0.575483633
+    com_xyz: [-0.013636181, -0.000140376, 0.090845484]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.003609057017, ixy: -1e-12, ixz: 4.70288e-07, iyy: 0.000946458193, iyz: -7.9e-11, izz: 0.002743843778}
+    inertia: {ixx: 0.003498462481, ixy: 0.0, ixz: -2.4322e-07, iyy: 0.000878987219, iyz: 5.1e-11, izz: 0.002693492557}
   carriage:
     mesh: carriage.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     collision_box: {size: [0.2587, 0.342, 0.2044], xyz: [0.05365, 0.0, 0.0628]}
-    mass: 1.420508553
-    com_xyz: [0.034813035, -2.524e-06, 0.067991978]
+    mass: 1.55579936
+    com_xyz: [0.036750157, -0.000112314, 0.069750367]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.004934504176, ixy: 2.061967e-06, ixz: 0.000237829835, iyy: 0.002973825367, iyz: -1.166231e-06, izz: 0.005133779098}
-  mid_link:
-    mesh: mid_link.stl
+    inertia: {ixx: 0.005474877306, ixy: 1.426898e-06, ixz: 0.000221225565, iyy: 0.003032775933, iyz: -7.48921e-07, izz: 0.005829140378}
+  midlink:
+    mesh: midlink.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.4434, 0.074, 0.077], xyz: [0.1917, 0.0, 0.0356]}
-    mass: 0.797529595
-    com_xyz: [0.1932823, -1.4064e-05, 0.049226311]
+    mass: 0.80121352
+    com_xyz: [0.18139091, -3.1091e-05, -0.016951333]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 0.000461135849, ixy: -8.194847e-06, ixz: -6.3912086e-05, iyy: 0.011175475724, iyz: -8.51525e-07, izz: 0.011516713373}
+    inertia: {ixx: 0.000528613757, ixy: 7.211897e-06, ixz: -0.00013202882, iyy: 0.011917134964, iyz: -7.53537e-07, izz: 0.01235417296}
   endeffector_link:
     mesh: endeffector_link.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
     collision_box: {size: [0.2995, 0.068, 0.06], xyz: [0.13875, 0.0, 0.0094]}
-    mass: 0.263336756
-    com_xyz: [0.133087761, 1.327e-06, 0.012572098]
+    mass: 0.262099236
+    com_xyz: [0.133663714, 4.3637e-05, -0.026831362]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 7.1743985e-05, ixy: 1.26671e-07, ixz: 2.1902239e-05, iyy: 0.001622543183, iyz: -6.26e-09, izz: 0.001671935951}
-  end_effector:
-    mesh: end_effector.stl
+    inertia: {ixx: 7.1499516e-05, ixy: -9.13e-09, ixz: 2.1767611e-05, iyy: 0.001620605624, iyz: 1.8903e-08, izz: 0.001669772791}
+  endeffector:
+    mesh: endeffector.stl
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.2227, 0.1699, 0.0482], xyz: [0.10035, -0.00055, -0.0241]}
-    mass: 0.237299902
-    com_xyz: [0.081974532, -0.000489427, -0.019813075]
+    mass: 0.217349032
+    com_xyz: [0.075359882, 0.000456578, -0.027923524]
     com_rpy: [0.0, 0.0, 0.0]
-    inertia: {ixx: 8.1160187e-05, ixy: 2.4677e-07, ixz: -2.067577e-06, iyy: 9.4075527e-05, iyz: 9.65678e-07, izz: 0.000132548388}
+    inertia: {ixx: 7.1302648e-05, ixy: -1.70531e-07, ixz: 1.340157e-06, iyy: 8.5696978e-05, iyz: 9.66513e-07, izz: 0.000112902268}
 
 joints:
   z_crate:
@@ -135,10 +133,10 @@ joints:
     type: prismatic
     parent: gantry
     child: crate
-    xyz: [0.09165, -0.00125, 0.1681]
+    xyz: [0.094911, 0.0005, 0.1328]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.4804}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.9}
     dynamics: {damping: 0.0, friction: 0.0}
   z_carriage:
     note: |-
@@ -149,25 +147,25 @@ joints:
     type: prismatic
     parent: gantry
     child: carriage
-    xyz: [0.09165, -0.00125, 0.3675]
+    xyz: [0.094911, 0.0005, 0.2978]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.446}
+    limit: {effort: 200.0, velocity: 1.0, lower: 0.0, upper: 0.9}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_1:
     type: revolute
     parent: carriage
-    child: mid_link
-    xyz: [0.1514, 0.0, -0.0788]
+    child: midlink
+    xyz: [0.1514, 0.0, 0.0]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 3.0, lower: -2.0944, upper: 2.0944}
     dynamics: {damping: 0.0, friction: 0.0}
   joint_2:
     type: revolute
-    parent: mid_link
+    parent: midlink
     child: endeffector_link
-    xyz: [0.3684, 0.0, -0.0251]
+    xyz: [0.3704, 0.0, -0.04375]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
     limit: {effort: 50.0, velocity: 3.0, lower: -3.1416, upper: 3.1416}
@@ -183,9 +181,10 @@ joints:
       without a full turn of the gripper.
     type: revolute
     parent: endeffector_link
-    child: end_effector
-    xyz: [0.25484, 0.0, -0.0026]
+    child: endeffector
+    xyz: [0.25484, 0.0, -0.038]
     rpy: [0.0, 0.0, 0.0]
     axis: [0.0, 0.0, 1.0]
-    limit: {effort: 50.0, velocity: 6.0, lower: -4.7124, upper: 4.7124}
+    limit: {effort: 50.0, velocity: 6.0, lower: -3.1416, upper: 3.1416}
     dynamics: {damping: 0.0, friction: 0.0}
+

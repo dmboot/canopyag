@@ -52,7 +52,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 import canopyag_motion
 from canopyag_motion import CRATE, JOINTS, WRIST, PlanError
 
-REST = [0.05, 0.0, 0.0]    # z_carriage, joint_1, joint_2 (as demo.py)
+REST = [0.05, 0.0, 0.0]    # z_carriage, joint_1, joint_2
 GREEN, RED, GREY = "#2a9d3a", "#c0392b", "#777777"
 
 

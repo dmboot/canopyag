@@ -312,6 +312,73 @@ def test_pick_drop_next(model, planner, side):
         start = ends(drop)
 
 
+def wall_side(model, q, side):
+    """Per sample: how far (m) the arm reaches towards the wall's side, the
+    gripper tip and every corner of link 1, link 2 and the gripper (their
+    collision boxes without the margin)."""
+    world, n = model._world_boxes(q)
+    reach = [side * model.tool_position(q)[1]]
+    for link in ("mid_link", "endeffector_link", "end_effector"):
+        _, y, _, yaw, h = world[link]
+        h = h - model.margin
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                reach.append(side * (y + np.sin(yaw) * sx * h[0] + np.cos(yaw) * sy * h[1]))
+    return np.max([np.broadcast_to(r, (n,)) for r in reach], axis=0)
+
+
+@pytest.mark.parametrize("side", [1, -1])
+def test_wall_demo(model, planner, side):
+    """demo.py's path, planned the way motion_server.py runs it (the next
+    goal while the crate still moves, a bit after the arm arrived): ten fruit over the full carriage
+    range, touched with the gripper to the wall, joint_1 never far out, and
+    nothing ever past the wall (the planner does not know it is there). The
+    crate is in place at every drop."""
+    from canopyag_motion import wall_demo
+    steps = wall_demo.path(model, planner.gap, side)
+    fruit = wall_demo.touches(model, planner.gap, side)
+    assert len(fruit) == 10 == sum(st.touch >= 0 for st in steps) == sum(st.drop for st in steps)
+    zs = [zc for _, zc in fruit]
+    assert min(zs) == pytest.approx(planner.gap) and max(zs) == model.limits("z_carriage")[1]
+    assert zs == sorted(zs)                                 # the carriage only goes up
+    heading = side * math.pi / 2
+    rest = steps[-1]
+    start = pointing(model, 0.0, z=rest.joints[0])
+    for st in steps:
+        plan = planner.to_joints(start, st.joints, st.speed, heading=side, crate=st.crate)
+        assert "stops first" not in plan.notes, st.name
+        s = check_plan(model, planner, plan, start)
+        end = plan.duration if st.wait_crate else plan.arm_duration
+        q = {j: s[j][0] for j in JOINTS}
+        assert wall_side(model, q, side).max() < wall_demo.WALL_Y + 0.005, st.name
+        tip = model.tool_position({j: v[-1] for j, v in q.items()})
+        if st.touch >= 0:
+            assert tip == pytest.approx(fruit[st.touch][0], abs=1e-9)
+            assert same_angle(plan.profiles[HEADING].end, heading)
+        assert np.degrees(side * q["joint_1"]).min() > -21.0, st.name
+        assert np.degrees(side * q["joint_1"]).max() < 65.0, st.name
+        if st.drop:
+            assert abs(abs(plan.goal[2]) - math.pi) < 1e-9          # folded under link 1
+            assert plan.profiles["z_crate"].end == pytest.approx(st.crate)
+        # The next goal reaches motion_server.py a little after the arm arrived.
+        start = plan.raw_state(end if st.wait_crate else min(end + 0.2, plan.duration))
+
+
+def test_slow_arm_while_the_crate_moves(model, planner):
+    """joint_3 makes the arm slow down while the crate is on its way: the arm
+    alone is slowed, the crate goes on (no stop first)."""
+    first = planner.to_joints(pointing(model, PLUS_Y), (0.4, 0.0, 0.0), crate=0.35)
+    t0 = first.arm_duration
+    start = first.raw_state(t0)
+    assert abs(start["z_crate"][1]) > 0.05
+    plan = planner.to_joints(start, (0.4, DEG(-20), DEG(-20)), heading=1, crate=0.35)
+    assert "stops first" not in plan.notes
+    assert any("slowed" in n for n in plan.notes)
+    check_plan(model, planner, plan, start)
+    assert plan.profiles["z_crate"].duration == pytest.approx(first.profiles["z_crate"].duration
+                                                              - t0, abs=1e-6)
+
+
 def test_joint_3_holds_the_heading(model, planner):
     """Along a sampled plan joint_3 = heading - joint_1 - joint_2 (minus the
     fixed turns), and the gripper does not turn in the world."""

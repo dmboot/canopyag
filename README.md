@@ -131,7 +131,7 @@ red). Nothing moves until you press **Go**.
 | **Go** | sends the point; the panel shows the time left, then `arrived` or the reason it failed |
 | **Stop** | cancels: the robot brakes to a stop |
 | **Random** | a reachable point anywhere in the box, to try long paths |
-| **Rest** | the arm to the demo's rest pose (carriage 5 cm up, arm straight, gripper to the side) |
+| **Rest** | the arm to rest (carriage 5 cm up, arm straight, gripper to the side) |
 | crate | not part of the point: on release (or a typed value) only the crate goes there, at the speed above, and the arm carries on. Refused if it would come within 2 cm of the carriage's goal; at home the carriage is right above it, so raise the carriage first. It shows where the crate is once it stands still |
 | Send on release | every slider release or typed value is a Go, so new goals take over from the running motion |
 
@@ -173,7 +173,7 @@ either). Run `colcon build --symlink-install` after adding files.
 | **make it faster than `speed:=1.0`** | `canopyag_motion/config/motion.yaml` (`limits`) | then check the two motor limits below |
 | …so the motor keeps up | `hardware.yaml` `max_motor_rpm` | at least `max_velocity × motor_revs_per_unit × 72` (9.6:1: 3.5 rad/s → 385 rpm), at most 3000 |
 | …and accelerates in time | `hardware.yaml` `acceleration` | the driver ramps at `20000 / (256 − acceleration)` motor rpm/s. At 9.6:1, 230 ≈ 8 rad/s², 240 ≈ 14 rad/s². Keep `max_acceleration` below that |
-| change the demo fruit | `canopyag_motion/scripts/demo.py`: `FRUIT` | world points of the gripper tip, right side; `side:=left` mirrors them in y |
+| change the demo fruit | `canopyag_motion/canopyag_motion/wall_demo.py` | `WALL_Y` (the wall, now 0.40 m from the gantry), `COLUMNS` (x of the fruit), `ROWS` (over the full carriage range), `APPROACH`, `PICK_SPEED`; right side, `side:=left` mirrors it in y. The planner does not know the wall: the path keeps the arm off it (see the file), `test_wall_demo` checks that. RViz shows the fruit (red) and the wall: `/demo_markers` |
 | pick on the other side | launch argument | `side:=left` (default `right`, seen from the front of the gantry): the gripper points to -y instead of +y |
 | **choose where the gripper points** | per goal, or `motion.yaml` `heading.default` | `move_to.py ... --heading=+y` / `--heading=-y`, `MoveTo.heading`, the panel's *gripper to*; the default `auto` is the side of joint_1 the goal is on |
 | show the pitch wiggle and grip in the demo | launch argument | `dexterity:=true` (default on in `demo.launch.py`, off in `motion.launch.py`). Needs a `gripper_controller` (FollowJointTrajectory, joints `wrist_pitch`, `gripper`: `demo.py` parameters `gripper_controller`, `gripper_joints`, `grip_open`, `grip_closed`); without it the demo says so once and goes on |
@@ -182,7 +182,7 @@ either). Run `colcon build --symlink-install` after adding files.
 | **limit how far the wrist turns** | `robot_parameters.yaml` `joints.joint_3.limit` `lower` / `upper` | the cable range from home (gripper along link 2); kept on a re-import. canopyag_motion needs at least ±π; less than ±270° makes some folds turn the gripper a full turn on the way |
 | make the wrist faster / slower | `motion.yaml` `limits.joint_3` | also the limit for turning the heading. A move that would turn `joint_3` faster runs slower as a whole (note `slowed to …`) |
 | change how close the arm may come to itself | `motion.yaml` `collision.margin` | m added around every collision box (now 2 cm). The gripper hangs below link 1 and the carriage, so with the gripper to the side the fold under link 1 is clear; close to the gantry the gripper box is what hits first |
-| move the crate | the goal panel's crate slider, or `MoveTo` with `crate: [z]`, `crate_only: true` | arm goals leave it where it is; `motion.yaml` `crate.follow: true` makes it ride `crate.trail` below the carriage again |
+| move the crate | the goal panel's crate slider, or `MoveTo` with `crate: [z]`, `crate_only: true` (`skip_crate_wait: true`: the result comes when the arm is there, the crate goes on) | arm goals leave it where it is; `motion.yaml` `crate.follow: true` makes it ride `crate.trail` below the carriage again |
 | **fit 5 motors on the bus** | `hardware.yaml` `can_rate_hz` | now 50: every cycle is 2 request/reply turns per motor + 1 (about 1.5 ms each on can0), 11 turns ≈ 16.5 ms. If the plugin warns `CAN cycle takes …`, use the rate it suggests |
 | see what the plugin sends | terminal 1 | add `hw_log_level:=debug`: every F5 with target, lag and rpm, and every 10 s the CAN rates and late replies |
 | import a new CAD export | `canopyag_description/scripts/import_solidworks_urdf.py` | see **Re-importing the CAD** |

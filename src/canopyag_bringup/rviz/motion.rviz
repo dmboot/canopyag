@@ -29,6 +29,15 @@ Visualization Manager:
       # Tick to see the boxes canopyag_motion keeps apart (before its margin).
       Collision Enabled: false
       Alpha: 1
+    # canopyag_motion demo.py: the fruit it touches (red) and the wall.
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Demo
+      Enabled: true
+      Topic:
+        Value: /demo_markers
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
     # canopyag_motion motion_server.py: the goal (orange) and the tool point's path (blue).
     - Class: rviz_default_plugins/MarkerArray
       Name: Goal

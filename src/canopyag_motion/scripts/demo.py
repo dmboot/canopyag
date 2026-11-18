@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Demo: pick fruit up one side of the gantry, as fast as the robot can.
+"""Demo: pick fruit off a wall beside the gantry, as fast as the robot can.
 
     ros2 launch canopyag_motion demo.launch.py [side:=left] [loop:=true] [speed:=0.5]   # mock
     ros2 launch canopyag_motion motion.launch.py demo:=true speed:=0.3                # real robot
 
-Every fruit: move in front of it, go in (slowly) with the gripper pointing
-at it, then drop it - link 2 turns 180 deg and folds under link 1 - and on to
-the next one. The fruit are world points of the gripper tip (FRUIT);
-motion_server.py works out the joints, moves them all at once, keeps the
-gripper pointing to the fruit side the whole way (joint_3) and the crate
-under the carriage.
+The wall stands 0.40 m from the gantry, on the `side` (right / left, seen
+from the front of the gantry: world +y / -y). Ten fruit on it, five rows
+from the carriage's lowest to its highest: the carriage goes up row by row,
+the crate follows it slower, just under it. Every fruit: in front of it, in
+slowly until the gripper tip touches the wall, then link 2 turns fast under
+link 1 to drop it in the crate, and on to the next. The gripper points to the
+wall the whole way. The path and why it is shaped the way it is (the arm
+must stay off the wall, which the planner does not know about):
+canopyag_motion/wall_demo.py.
 
-`side` (right / left, seen from the front of the gantry) mirrors FRUIT and
-points the gripper that way: right is world +y, left -y.
+Publishes demo_markers (visualization_msgs/MarkerArray, latched): a red
+sphere at every fruit and the wall.
+
 `speed` (0..1] scales every move.
 `dexterity` (off; demo.launch.py turns it on for mock): at every fruit a short wiggle of the gripper
 pitch and a grip, and a release at the drop. Pitch and gripper are not in the
@@ -23,35 +27,29 @@ demo says so once and goes on without.
 """
 
 import math
+import os
 import sys
 import time
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from builtin_interfaces.msg import Duration
 from canopyag_interfaces.action import MoveTo
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Point
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from visualization_msgs.msg import Marker, MarkerArray
 
-# Gripper tip at every fruit (world, m), right side. The gripper points to
-# +y; it goes in along that from APPROACH closer to the gantry.
-FRUIT = [
-    (0.46, 0.55, 0.30), (0.28, 0.60, 0.36),
-    (0.46, 0.55, 0.45), (0.28, 0.60, 0.51),
-    (0.46, 0.55, 0.60), (0.28, 0.60, 0.66),
-]
-APPROACH = 0.06            # m
-PICK_SPEED = 0.4           # of `speed`, for going in
-# Drop: joint_1 here, link 2 turned 180 deg from its pick angle - folded under
-# link 1, the gripper still pointing to the side. joint_3 is not sent: it
-# follows from the heading.
-DROP_JOINT_1 = 0.0
-REST = [0.05, 0.0, 0.0]    # z_carriage, joint_1, joint_2: carriage just clear of the crate
+import canopyag_motion
+from canopyag_motion import wall_demo
+
 # dexterity: pitch +- this and back (rad), each step this long (s).
 WIGGLE = 0.35
 WIGGLE_STEP = 0.25
+MARKER = 0.04           # m, diameter of the fruit spheres
 
 
 class Gripper:
@@ -106,6 +104,21 @@ class Demo(Node):
             raise ValueError(f"side must be right or left, got {self.side}")
         self.heading = (MoveTo.Goal.HEADING_POS_Y if self.side == "right" else
                         MoveTo.Goal.HEADING_NEG_Y)
+        # The same robot as motion_server.py, for the path's inverse kinematics.
+        desc = get_package_share_directory("canopyag_description")
+        here = get_package_share_directory("canopyag_motion")
+        model, planner, _ = canopyag_motion.load(
+            self.declare_parameter(
+                "robot_parameters", os.path.join(desc, "config", "robot_parameters.yaml")).value,
+            self.declare_parameter(
+                "motion_config", os.path.join(here, "config", "motion.yaml")).value)
+        s = 1 if self.side == "right" else -1
+        self.steps = wall_demo.path(model, planner.gap, s)
+        self.fruit = [p for p, _ in wall_demo.touches(model, planner.gap, s)]
+        self.frame = self.declare_parameter("frame", "world").value
+        self.markers = self.create_publisher(
+            MarkerArray, "demo_markers",
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.client = ActionClient(self, MoveTo, "move_to")
         self.gripper = None
         if self.declare_parameter("dexterity", False).value:
@@ -115,12 +128,37 @@ class Demo(Node):
                 self.declare_parameter("grip_closed", 1.0).value,
                 self.declare_parameter("grip_open", 0.0).value)
 
-    def move(self, name, point=None, joints=None, speed=1.0, quiet=False):
-        goal = MoveTo.Goal(speed=speed * self.speed, heading=self.heading)
-        if joints is not None:
-            goal.joints = [float(v) for v in joints]
-        else:
-            goal.point = Point(x=point[0], y=point[1], z=point[2])
+    def publish_markers(self):
+        """A red sphere at every fruit, and the wall behind them."""
+        out = []
+        for i, (x, y, z) in enumerate(self.fruit):
+            m = Marker(type=Marker.SPHERE, ns="fruit", id=i, action=Marker.ADD)
+            m.pose.position = Point(x=x, y=y, z=z)
+            m.scale.x = m.scale.y = m.scale.z = MARKER
+            m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.0, 0.0, 1.0
+            out.append(m)
+        xs, ys, zs = zip(*self.fruit)
+        wall = Marker(type=Marker.CUBE, ns="wall", id=0, action=Marker.ADD)
+        thick = 0.01
+        side = math.copysign(1.0, ys[0])
+        wall.pose.position = Point(x=(min(xs) + max(xs)) / 2, y=ys[0] + side * thick / 2,
+                                   z=(min(zs) + max(zs)) / 2)
+        wall.scale.x, wall.scale.y = max(xs) - min(xs) + 0.2, thick
+        wall.scale.z = max(zs) - min(zs) + 0.2
+        wall.color.r, wall.color.g, wall.color.b, wall.color.a = 0.6, 0.6, 0.6, 0.3
+        out.append(wall)
+        for m in out:
+            m.header.frame_id = self.frame
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.pose.orientation.w = 1.0
+        self.markers.publish(MarkerArray(markers=out))
+
+    def move(self, step, quiet=False):
+        """Send a wall_demo.Step and wait: until the arm is there, or (wait_crate)
+        the crate too. The joints it went to, or None."""
+        goal = MoveTo.Goal(speed=step.speed * self.speed, heading=self.heading,
+                           joints=[float(v) for v in step.joints], crate=[float(step.crate)],
+                           skip_crate_wait=not step.wait_crate)
         future = self.client.send_goal_async(goal)
         rclpy.spin_until_future_complete(self, future)
         result_future = future.result().get_result_async()
@@ -128,12 +166,12 @@ class Demo(Node):
         r = result_future.result().result
         if not r.success:
             if not quiet:
-                self.get_logger().error(f"{name}: {r.message}")
+                self.get_logger().error(f"{step.name}: {r.message}")
             return None
         self.get_logger().info(
-            f"{name:22s} {r.duration:4.2f} s   z_carriage {r.joints[0]:.2f} m  joint_1 "
+            f"{step.name:18s} {r.duration:4.2f} s   z_carriage {r.joints[0]:.2f} m  joint_1 "
             f"{math.degrees(r.joints[1]):6.1f}  joint_2 {math.degrees(r.joints[2]):6.1f}  "
-            f"joint_3 {math.degrees(r.joints[3]):6.1f} deg")
+            f"joint_3 {math.degrees(r.joints[3]):6.1f} deg   crate {step.crate:.2f} m")
         return r.joints
 
     def hand(self, name, what):
@@ -144,11 +182,13 @@ class Demo(Node):
         return False
 
     def run(self):
+        self.publish_markers()
         self.get_logger().info(f"waiting for motion_server ... (side {self.side}, speed {self.speed:g})")
         self.client.wait_for_server()
         # Right after launch the controllers may still be starting.
+        rest = self.steps[-1]
         deadline = time.monotonic() + 30.0
-        while self.move("rest", joints=REST, quiet=time.monotonic() < deadline) is None:
+        while self.move(rest, quiet=time.monotonic() < deadline) is None:
             if time.monotonic() > deadline or not rclpy.ok():
                 return 1
             time.sleep(1.0)
@@ -157,27 +197,15 @@ class Demo(Node):
                 f"dexterity: no {self.gripper.action} action server, so no pitch "
                 f"wiggle and grip (pitch and gripper are not in the URDF yet). Going on without.")
             self.gripper = None
-        s = 1.0 if self.side == "right" else -1.0
         while rclpy.ok():
             t0 = time.monotonic()
-            for i, (x, y, z) in enumerate(FRUIT):
-                fruit = (x, s * y, z)
-                near = (x, s * (y - APPROACH), z)
-                if self.move(f"fruit{i}_approach", point=near) is None:
+            for step in self.steps:
+                if self.move(step) is None:
                     return 1
-                picked = self.move(f"fruit{i}_pick", point=fruit, speed=PICK_SPEED)
-                if picked is None:
+                if step.touch >= 0 and not self.hand(f"{step.name}_grip", "wiggle_and_grip"):
                     return 1
-                if not self.hand(f"fruit{i}_grip", "wiggle_and_grip"):
+                if step.drop and not self.hand(f"{step.name}_release", "release"):
                     return 1
-                j2 = picked[2] - math.pi if picked[2] > 0.0 else picked[2] + math.pi
-                drop = [picked[0], DROP_JOINT_1, j2]
-                if self.move(f"fruit{i}_drop", joints=drop) is None:
-                    return 1
-                if not self.hand(f"fruit{i}_release", "release"):
-                    return 1
-            if self.move("rest", joints=REST) is None:
-                return 1
             self.get_logger().info(f"path done in {time.monotonic() - t0:.1f} s")
             if not self.loop:
                 return 0

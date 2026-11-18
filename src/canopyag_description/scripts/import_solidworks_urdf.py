@@ -388,6 +388,16 @@ def main():
                     entry[k] = prev[k]
                     kept.append(f"{kind} {n}.{k}")
 
+    # A joint that flips between rotating and sliding is a wrong joint type
+    # picked in the exporter, not a design change: keep the old type.
+    for n, J in joints.items():
+        prev = ((old.get("joints") or {}).get(n) or {}).get("type")
+        if prev and ("prismatic" in (prev, J["type"])) and "fixed" not in (prev, J["type"]) \
+                and prev != J["type"]:
+            notes.append(f"{n}: export says {J['type']}, kept {prev} - fix the joint "
+                         f"type in the SolidWorks exporter")
+            J["type"] = prev
+
     # An empty limit in the export makes a joint continuous (see above), but a
     # hand-tuned lower/upper that survived the import says it is limited.
     for n, J in joints.items():

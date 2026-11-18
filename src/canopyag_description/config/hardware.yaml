@@ -73,7 +73,7 @@ joints:
     initial_position: 0.0       # <-- EDIT
 
   z_crate:
-    mode: virtual               # <-- EDIT
+    mode: can               # <-- EDIT
     can_id: 1                   # <-- EDIT
     # 4:1 gearbox
     motor_revs_per_unit: 100.0  # <-- EDIT 

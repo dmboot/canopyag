@@ -174,8 +174,15 @@ class MotionServer(Node):
             return result
         result.joints = [float(v) for v in motion.plan.goal]
         result.duration = motion.plan.duration
+        arm_end = motion.plan.arm_duration if req.skip_crate_wait else None
         feedback = MoveTo.Feedback()
-        while not motion.done.wait(0.1):
+        while not motion.done.wait(0.1 if arm_end is None else min(0.1, max(
+                arm_end - motion.elapsed(self.get_clock().now()), 0.001))):
+            if arm_end is not None and motion.elapsed(self.get_clock().now()) >= arm_end:
+                result.duration = arm_end
+                result.success, result.message = True, "the arm arrived, the crate is on its way"
+                handle.succeed()
+                return result
             if handle.is_cancel_requested:
                 stop = self.halt(motion)
                 if stop is not None:

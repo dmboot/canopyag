@@ -24,14 +24,16 @@ other side, or a start at any other yaw), the heading itself gets a
 time-optimal profile, at joint_3's limits. joint_3's velocity and
 acceleration follow from those of joint_1, joint_2 and the heading; if they
 come out over joint_3's limits the whole plan runs slower, uniformly in time,
-by the smallest factor that fits. A plan whose joint_3 leaves its limits on
-the way is not used.
+by the smallest factor that fits (while only the rail moves, e.g. the crate
+catching up, the arm alone runs slower). A plan whose joint_3 leaves its
+limits on the way is not used.
 
 The carriage and the crate ride the same rail. The crate goes where a goal
 sends it (`crate`), or else to `crate_trail` below the carriage's goal
 (`crate_follow` on) or nowhere (off: it only moves down when the carriage
 would come too close). The carriage-crate gap never drops below `gap`:
-whichever must not catch up waits.
+whichever must not catch up waits. A goal's speed does not slow a crate that
+is already on its way.
 
 Input shaping (Shaper, Planner.shaped): joint_1 rings at ~3.4 Hz after a
 hard stop (drivetrain compliance + backlash). The plan that is sent is the
@@ -105,6 +107,12 @@ class Plan:
     notes: list = field(default_factory=list)
     shaper: Shaper = None              # None: sent as planned
     before: object = None              # t < 0 -> raw(): the motion this one replaced
+
+    @property
+    def arm_duration(self):
+        """Until the arm (everything but the crate) stands still, as sent."""
+        tail = self.shaper.duration if self.shaper else 0.0
+        return max(p.duration for j, p in self.profiles.items() if j != CRATE) + tail
 
     def raw(self, t):
         """The planned (unshaped) motion of the profiles' joints at t (array).
@@ -335,8 +343,13 @@ class Planner:
         if not 0.0 < speed <= 1.0:
             raise PlanError(f"speed must be in (0, 1], got {speed}")
         lim = {j: (v * speed, a * speed) for j, (v, a) in self.limits.items()}
+        # A crate on its way keeps its full limits: a slow arm goal (going in
+        # to a fruit) must not make it overshoot, braking slower than it can.
+        if abs(start[CRATE][1]) > EPS_V:
+            lim[CRATE] = self.limits[CRATE]
         rail, rail_notes = self._rail(start, goals[0][0], lim, crate)
         moving = any(abs(v) > EPS_V for _, v in start.values())
+        arm_rests = all(abs(start[j][1]) <= EPS_V for j in ("joint_1", "joint_2", WRIST))
         # The heading moves on its own, like the rail: every collision check
         # below samples it with the rail's profiles, joint_3 follows from it.
         psi0, dpsi0 = self._heading_now(start)
@@ -385,10 +398,22 @@ class Planner:
                 if k is None:
                     continue
                 if k > 1.0:
-                    if moving:      # would not start at the robot's speed
+                    if not moving:
+                        profiles = {j: p.stretched(k) for j, p in profiles.items()}
+                    elif arm_rests:
+                        # Only the rail moves (the crate catching up): slow
+                        # the arm alone, the rail goes on at its speed.
+                        arm_j = ("joint_1", "joint_2", HEADING)
+                        slow = {j: profiles[j].stretched(k) for j in arm_j}
+                        rail_s = {j: profiles[j] for j in ("z_carriage", CRATE)}
+                        if not self._free((slow["joint_1"], slow["joint_2"]),
+                                          {**rail_s, HEADING: slow[HEADING]}):
+                            too_fast.add(what)
+                            continue
+                        profiles = {**rail_s, **slow}
+                    else:           # would not start at the robot's speed
                         too_fast.add(what)
                         continue
-                    profiles = {j: p.stretched(k) for j, p in profiles.items()}
                     notes = notes + [f"slowed to {100.0 / k:.0f} % for joint_3"]
                 duration = max(p.duration for p in profiles.values())
                 if best is None or duration < best.duration - 1e-6 or \

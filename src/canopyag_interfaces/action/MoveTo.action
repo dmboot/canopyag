@@ -22,6 +22,10 @@ float64[] crate
 # true: only the crate moves (to `crate`); the arm carries on to wherever it
 # was going. `point` and `joints` are not used.
 bool crate_only
+# true: the result comes as soon as the arm (everything but the crate) has
+# arrived; the crate may still be on its way. The next goal carries on from
+# the crate's motion: give it the same `crate` to keep it going there.
+bool skip_crate_wait
 ---
 bool success
 string message
