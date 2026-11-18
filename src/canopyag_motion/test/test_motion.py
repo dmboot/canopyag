@@ -181,7 +181,7 @@ def test_only_the_planned_chain_must_be_vertical():
         params["links"]["finger"] = {"collision_box": {"size": [0.05, 0.03, 0.03],
                                                        "xyz": [0.03, 0.0, 0.0]}}
         params["joints"]["wrist_pitch"] = {
-            "type": "revolute", "parent": "end_effector", "child": "finger",
+            "type": "revolute", "parent": "endeffector", "child": "finger",
             "xyz": [0.2, 0.0, -0.01], "rpy": [0.0, 0.0, 0.0], "axis": [0.0, 1.0, 0.0],
             "limit": {"lower": -1.0, "upper": 1.0, "effort": 1.0, "velocity": 1.0}}
     m = model_with(add_pitch)
@@ -206,7 +206,7 @@ def test_collision_boxes(model):
     assert hit(60, 165)           # folding out there swings the gripper into the gantry
     assert not hit(60, 165, 180)  # ... unless the gripper is turned round
     assert hit(120, 180)          # at 120 deg link 2 reaches the gantry too
-    assert hit(120, 0)            # mid_link reaches the gantry at the joint_1 limit
+    assert hit(120, 0)            # midlink reaches the gantry at the joint_1 limit
     # the crate and the carriage are kept apart by the gap, not the boxes
     assert {"carriage", "crate"} not in [{a, b} for a, b, _ in model.pairs]
     assert not model.collisions({"z_carriage": 0.0, "z_crate": 0.0})[0]
@@ -221,10 +221,10 @@ def test_gripper_turns_freely_at_rest(model):
     for j3 in np.radians(np.arange(-270, 271, 10)):
         assert not model.colliding_pairs({**q, "joint_3": j3}), math.degrees(j3)
     dz = {frozenset((a, b)): d for a, b, d in model.pairs}
-    for link in ("mid_link", "carriage"):
-        assert frozenset(("end_effector", link)) not in dz
-    assert dz[frozenset(("crate", "end_effector"))] == 0.0
-    assert frozenset(("end_effector", "gantry")) in dz
+    for link in ("midlink", "carriage"):
+        assert frozenset(("endeffector", link)) not in dz
+    assert dz[frozenset(("crate", "endeffector"))] == 0.0
+    assert frozenset(("endeffector", "gantry")) in dz
 
 
 # ---------------------------------------------------------------- profiles
@@ -312,54 +312,49 @@ def test_pick_drop_next(model, planner, side):
         start = ends(drop)
 
 
-def wall_side(model, q, side):
-    """Per sample: how far (m) the arm reaches towards the wall's side, the
-    gripper tip and every corner of link 1, link 2 and the gripper (their
-    collision boxes without the margin)."""
-    world, n = model._world_boxes(q)
-    reach = [side * model.tool_position(q)[1]]
-    for link in ("mid_link", "endeffector_link", "end_effector"):
-        _, y, _, yaw, h = world[link]
-        h = h - model.margin
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                reach.append(side * (y + np.sin(yaw) * sx * h[0] + np.cos(yaw) * sy * h[1]))
-    return np.max([np.broadcast_to(r, (n,)) for r in reach], axis=0)
-
-
 @pytest.mark.parametrize("side", [1, -1])
 def test_wall_demo(model, planner, side):
     """demo.py's path, planned the way motion_server.py runs it (the next
-    goal while the crate still moves, a bit after the arm arrived): ten fruit over the full carriage
-    range, touched with the gripper to the wall, joint_1 never far out, and
-    nothing ever past the wall (the planner does not know it is there). The
-    crate is in place at every drop."""
+    goal while the crate still moves, a bit after the arm arrived): the fruit
+    over the full carriage range, up and down again, touched with the gripper
+    to the wall, every one placed on its own basket spot with link 1 forward
+    and link 2 folded under it, and nothing ever past the wall (the planner
+    does not know it is there) - also not on the first move, from straight
+    out to rest."""
     from canopyag_motion import wall_demo
-    steps = wall_demo.path(model, planner.gap, side)
+    steps = wall_demo.path(model, planner, side)
     fruit = wall_demo.touches(model, planner.gap, side)
-    assert len(fruit) == 10 == sum(st.touch >= 0 for st in steps) == sum(st.drop for st in steps)
+    spots = wall_demo.spots(side)
+    assert len(fruit) == sum(st.touch >= 0 for st in steps) == sum(st.drop for st in steps)
+    assert len(set(spots[:len(fruit)])) == len(fruit)        # every fruit its own spot
     zs = [zc for _, zc in fruit]
+    top = zs.index(max(zs))
     assert min(zs) == pytest.approx(planner.gap) and max(zs) == model.limits("z_carriage")[1]
-    assert zs == sorted(zs)                                 # the carriage only goes up
+    assert zs[:top + 1] == sorted(zs[:top + 1]) and zs[top:] == sorted(zs[top:], reverse=True)
     heading = side * math.pi / 2
     rest = steps[-1]
-    start = pointing(model, 0.0, z=rest.joints[0])
-    for st in steps:
+    start = pointing(model, heading, z=rest.joints[0])
+    placed = 0
+    for st in [rest] + steps:
         plan = planner.to_joints(start, st.joints, st.speed, heading=side, crate=st.crate)
         assert "stops first" not in plan.notes, st.name
+        assert not any("full turn" in n for n in plan.notes), st.name
         s = check_plan(model, planner, plan, start)
         end = plan.duration if st.wait_crate else plan.arm_duration
         q = {j: s[j][0] for j in JOINTS}
-        assert wall_side(model, q, side).max() < wall_demo.WALL_Y + 0.005, st.name
+        reach = wall_demo.wall_reach(model, q, side).max()
+        assert reach < wall_demo.WALL_Y + 0.005, st.name
         tip = model.tool_position({j: v[-1] for j, v in q.items()})
         if st.touch >= 0:
             assert tip == pytest.approx(fruit[st.touch][0], abs=1e-9)
             assert same_angle(plan.profiles[HEADING].end, heading)
-        assert np.degrees(side * q["joint_1"]).min() > -21.0, st.name
-        assert np.degrees(side * q["joint_1"]).max() < 65.0, st.name
         if st.drop:
-            assert abs(abs(plan.goal[2]) - math.pi) < 1e-9          # folded under link 1
-            assert plan.profiles["z_crate"].end == pytest.approx(st.crate)
+            assert tip[:2] == pytest.approx(spots[placed], abs=1e-9)
+            assert abs(plan.goal[1]) <= wall_demo.PLACE_JOINT_1 + 1e-9, st.name   # forward
+            assert side * plan.goal[2] >= wall_demo.PLACE_FOLD - 1e-9, st.name    # folded under
+            placed += 1
+        # The basket (on the crate) is under the gripper all the way.
+        assert (q["z_carriage"] - q["z_crate"] >= planner.gap - 1e-6).all(), st.name
         # The next goal reaches motion_server.py a little after the arm arrived.
         start = plan.raw_state(end if st.wait_crate else min(end + 0.2, plan.duration))
 

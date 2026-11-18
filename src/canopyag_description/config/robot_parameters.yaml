@@ -99,6 +99,7 @@ links:
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
+    collision_box: {size: [0.4469, 0.078, 0.068], xyz: [0.19395, 0.0, -0.02975]}
     mass: 0.80121352
     com_xyz: [0.18139091, -3.1091e-05, -0.016951333]
     com_rpy: [0.0, 0.0, 0.0]
@@ -108,7 +109,7 @@ links:
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
-    collision_box: {size: [0.2995, 0.068, 0.06], xyz: [0.13875, 0.0, 0.0094]}
+    collision_box: {size: [0.2996, 0.0679, 0.06], xyz: [0.1388, 0.0, -0.03]}
     mass: 0.262099236
     com_xyz: [0.133663714, 4.3637e-05, -0.026831362]
     com_rpy: [0.0, 0.0, 0.0]
@@ -118,6 +119,7 @@ links:
     material: structure
     visual_xyz: [0.0, 0.0, 0.0]
     visual_rpy: [0.0, 0.0, 0.0]
+    collision_box: {size: [0.1825, 0.1206, 0.0575], xyz: [0.08023, 0.0001, -0.02875]}
     mass: 0.217349032
     com_xyz: [0.075359882, 0.000456578, -0.027923524]
     com_rpy: [0.0, 0.0, 0.0]

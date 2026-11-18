@@ -10,11 +10,11 @@
 # ===========================================================================
 
 # The tool point: what "move to (x, y, z)" puts there. The gripper tip, a
-# point in `link`'s frame with the pitch at 0: end_effector (joint_3's link)
+# point in `link`'s frame with the pitch at 0: endeffector (joint_3's link)
 # or a link after it. The gripper points along that link's +x; the tip is
 # 0.21 m out along it from joint_3's axis (measured on the robot).
 tool:
-  link: end_effector
+  link: endeffector
   xyz: [0.21, 0.0, -0.008]      # <-- EDIT
 
 # Which way the gripper points: along world +y or -y, never anything else.

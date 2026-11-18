@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Demo: pick fruit off a wall beside the gantry, as fast as the robot can.
+"""Demo: pick fruit off a wall beside the gantry and place each one on its own
+spot in a basket, as fast as the robot can.
 
     ros2 launch canopyag_motion demo.launch.py [side:=left] [loop:=true] [speed:=0.5]   # mock
     ros2 launch canopyag_motion motion.launch.py demo:=true speed:=0.3                # real robot
 
-The wall stands 0.40 m from the gantry, on the `side` (right / left, seen
-from the front of the gantry: world +y / -y). Ten fruit on it, five rows
-from the carriage's lowest to its highest: the carriage goes up row by row,
-the crate follows it slower, just under it. Every fruit: in front of it, in
-slowly until the gripper tip touches the wall, then link 2 turns fast under
-link 1 to drop it in the crate, and on to the next. The gripper points to the
-wall the whole way. The path and why it is shaped the way it is (the arm
-must stay off the wall, which the planner does not know about):
+The wall stands 0.45 m from the gantry, on the `side` (right / left, seen
+from the front of the gantry: world +y / -y). Nine fruit on it over the
+carriage's whole range: five heights on the way up, four in between on the
+way down. Every fruit: in front of it, in until the gripper tip touches the
+wall, then link 1 forward with link 2 folded back under it to put the fruit
+on its spot in the basket - every fruit another spot. The basket rides on the
+crate, which keeps under the carriage. The gripper points to the wall the
+whole way. The path and why it is shaped the way it is (the arm must stay
+off the wall, which the planner does not know about):
 canopyag_motion/wall_demo.py.
 
-Publishes demo_markers (visualization_msgs/MarkerArray, latched): a red
-sphere at every fruit and the wall.
+Publishes demo_markers (visualization_msgs/MarkerArray, latched): the wall,
+the basket on the crate, its spots (the next one green) and a red sphere per
+fruit - on the wall, in the gripper once picked, on its spot once placed.
 
 `speed` (0..1] scales every move.
 `dexterity` (off; demo.launch.py turns it on for mock): at every fruit a short wiggle of the gripper
@@ -113,8 +116,13 @@ class Demo(Node):
             self.declare_parameter(
                 "motion_config", os.path.join(here, "config", "motion.yaml")).value)
         s = 1 if self.side == "right" else -1
-        self.steps = wall_demo.path(model, planner.gap, s)
+        self.steps = wall_demo.path(model, planner, s)
         self.fruit = [p for p, _ in wall_demo.touches(model, planner.gap, s)]
+        self.spots = wall_demo.spots(s)[:len(self.fruit)]
+        self.basket = wall_demo.basket(model, planner.gap, s)
+        self.crate_link, self.crate_x, self.crate_y = wall_demo.crate_frame(model)
+        self.tool_link, self.tool = model.tool_link, [float(v) for v in model.tool]
+        self.where = ["wall"] * len(self.fruit)     # wall, held or basket
         self.frame = self.declare_parameter("frame", "world").value
         self.markers = self.create_publisher(
             MarkerArray, "demo_markers",
@@ -129,28 +137,43 @@ class Demo(Node):
                 self.declare_parameter("grip_open", 0.0).value)
 
     def publish_markers(self):
-        """A red sphere at every fruit, and the wall behind them."""
+        """The wall, the basket and its spots, and every fruit where it is now:
+        on the wall, in the gripper (tool link frame) or on its spot in the
+        basket (crate frame). Frame-locked, so RViz carries the fruit and the
+        basket along with the gripper and the crate."""
         out = []
-        for i, (x, y, z) in enumerate(self.fruit):
-            m = Marker(type=Marker.SPHERE, ns="fruit", id=i, action=Marker.ADD)
-            m.pose.position = Point(x=x, y=y, z=z)
-            m.scale.x = m.scale.y = m.scale.z = MARKER
-            m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.0, 0.0, 1.0
+
+        def add(ns, i, kind, frame, xyz, scale, rgba):
+            m = Marker(type=kind, ns=ns, id=i, action=Marker.ADD, frame_locked=True)
+            m.header.frame_id = frame
+            m.pose.position = Point(x=float(xyz[0]), y=float(xyz[1]), z=float(xyz[2]))
+            m.pose.orientation.w = 1.0
+            m.scale.x, m.scale.y, m.scale.z = (float(v) for v in scale)
+            m.color.r, m.color.g, m.color.b, m.color.a = rgba
             out.append(m)
+
         xs, ys, zs = zip(*self.fruit)
-        wall = Marker(type=Marker.CUBE, ns="wall", id=0, action=Marker.ADD)
         thick = 0.01
         side = math.copysign(1.0, ys[0])
-        wall.pose.position = Point(x=(min(xs) + max(xs)) / 2, y=ys[0] + side * thick / 2,
-                                   z=(min(zs) + max(zs)) / 2)
-        wall.scale.x, wall.scale.y = max(xs) - min(xs) + 0.2, thick
-        wall.scale.z = max(zs) - min(zs) + 0.2
-        wall.color.r, wall.color.g, wall.color.b, wall.color.a = 0.6, 0.6, 0.6, 0.3
-        out.append(wall)
-        for m in out:
-            m.header.frame_id = self.frame
-            m.header.stamp = self.get_clock().now().to_msg()
-            m.pose.orientation.w = 1.0
+        add("wall", 0, Marker.CUBE, self.frame,
+            ((min(xs) + max(xs)) / 2, ys[0] + side * thick / 2, (min(zs) + max(zs)) / 2),
+            (max(xs) - min(xs) + 0.2, thick, max(zs) - min(zs) + 0.2), (0.6, 0.6, 0.6, 0.3))
+        centre, size, floor = self.basket
+        add("basket", 0, Marker.CUBE, self.crate_link, centre, size, (0.55, 0.35, 0.15, 0.35))
+        nxt = next((i for i, w in enumerate(self.where) if w != "basket"), None)
+        for i, (x, y) in enumerate(self.spots):
+            spot = (x - self.crate_x, y - self.crate_y)
+            add("spot", i, Marker.CYLINDER, self.crate_link, (*spot, floor + 0.001),
+                (0.03, 0.03, 0.002), (0.1, 0.8, 0.1, 1.0) if i == nxt else (0.3, 0.3, 0.3, 0.6))
+            if self.where[i] == "wall":
+                add("fruit", i, Marker.SPHERE, self.frame, self.fruit[i], [MARKER] * 3,
+                    (1.0, 0.0, 0.0, 1.0))
+            elif self.where[i] == "held":
+                add("fruit", i, Marker.SPHERE, self.tool_link, self.tool, [MARKER] * 3,
+                    (1.0, 0.0, 0.0, 1.0))
+            else:
+                add("fruit", i, Marker.SPHERE, self.crate_link, (*spot, floor + MARKER / 2),
+                    [MARKER] * 3, (1.0, 0.0, 0.0, 1.0))
         self.markers.publish(MarkerArray(markers=out))
 
     def move(self, step, quiet=False):
@@ -199,13 +222,21 @@ class Demo(Node):
             self.gripper = None
         while rclpy.ok():
             t0 = time.monotonic()
+            self.where = ["wall"] * len(self.fruit)        # every round a full wall
+            self.publish_markers()
             for step in self.steps:
                 if self.move(step) is None:
                     return 1
-                if step.touch >= 0 and not self.hand(f"{step.name}_grip", "wiggle_and_grip"):
-                    return 1
-                if step.drop and not self.hand(f"{step.name}_release", "release"):
-                    return 1
+                if step.touch >= 0:
+                    if not self.hand(f"{step.name}_grip", "wiggle_and_grip"):
+                        return 1
+                    self.where[step.touch] = "held"
+                    self.publish_markers()
+                if step.drop:
+                    if not self.hand(f"{step.name}_release", "release"):
+                        return 1
+                    self.where[self.where.index("held")] = "basket"
+                    self.publish_markers()
             self.get_logger().info(f"path done in {time.monotonic() - t0:.1f} s")
             if not self.loop:
                 return 0
